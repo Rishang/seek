@@ -47,8 +47,13 @@ esac
 # --- resolve version ------------------------------------------------------
 if [ "$VERSION" = "latest" ]; then
   say "resolving latest release of $REPO ..."
-  VERSION=$(dltext "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep -m1 '"tag_name"' \
+  # Capture the full response first, then parse. Piping curl straight into
+  # `grep -m1` makes grep close the pipe on its first match, so curl aborts
+  # mid-write with "curl: (23) Failure writing output to destination".
+  release_json=$(dltext "https://api.github.com/repos/$REPO/releases/latest") || true
+  VERSION=$(printf '%s\n' "$release_json" \
+    | grep '"tag_name"' \
+    | head -n1 \
     | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
   [ -n "$VERSION" ] || err "could not resolve latest release tag (no releases yet?)"
 fi
@@ -99,4 +104,5 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) say "note: $BIN_DIR is not on your PATH — add it: export PATH=\"$BIN_DIR:\$PATH\"" ;;
 esac
-say "run: seek --help"
+say "next: run 'seek config init' to add provider keys"
+say "then:  seek --help"
