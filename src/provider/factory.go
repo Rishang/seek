@@ -29,6 +29,9 @@ func NewFactory(providers []config.ProviderConfig) *Factory {
 		caches:    make(map[string]opCache, 3),
 	}
 	for _, pc := range providers {
+		if pc.APIKey == "" && pc.Host == "" {
+			continue // unconfigured: no key and no host
+		}
 		switch pc.Name {
 		case "firecrawl":
 			f.providers[pc.Name] = NewFirecrawlProvider(pc)
