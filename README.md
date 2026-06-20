@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" width="180" alt="seek badger logo">
+</p>
+
 <h1 align="center">seek</h1>
 
 <p align="center">
