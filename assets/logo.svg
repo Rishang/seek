@@ -1,35 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="seek badger logo">
   <title>seek</title>
 
-  <!-- backing disc: charcoal with a subtle ring so it reads on light and dark -->
-  <circle cx="120" cy="120" r="112" fill="#17171b"/>
-  <circle cx="120" cy="120" r="112" fill="none" stroke="#3a3a42" stroke-width="3"/>
+  <!-- backing disc: charcoal with a soft ring so it reads on light and dark -->
+  <circle cx="120" cy="120" r="112" fill="#1b1b20"/>
+  <circle cx="120" cy="120" r="112" fill="none" stroke="#41414a" stroke-width="3"/>
 
-  <!-- ears -->
-  <circle cx="80" cy="70" r="15" fill="#cfd2d8"/>
-  <circle cx="160" cy="70" r="15" fill="#cfd2d8"/>
-  <circle cx="80" cy="70" r="7" fill="#17171b"/>
-  <circle cx="160" cy="70" r="7" fill="#17171b"/>
+  <!-- ears (behind the face), with pink inners -->
+  <circle cx="78" cy="74" r="17" fill="#d2d5db"/>
+  <circle cx="162" cy="74" r="17" fill="#d2d5db"/>
+  <circle cx="78" cy="74" r="8" fill="#ffc2cd"/>
+  <circle cx="162" cy="74" r="8" fill="#ffc2cd"/>
 
-  <!-- white face -->
+  <!-- chubby white face -->
   <path d="M120 56
-           C151 56 169 74 169 102
-           C169 142 146 178 120 191
-           C94 178 71 142 71 102
-           C71 74 89 56 120 56 Z"
-        fill="#f4f5f7"/>
+           C158 56 178 80 178 116
+           C178 156 152 188 120 188
+           C88 188 62 156 62 116
+           C62 80 82 56 120 56 Z"
+        fill="#f6f7f9"/>
 
-  <!-- badger eye-stripes (the signature) -->
-  <path d="M93 60 C84 60 78 71 80 90 C82 114 88 137 101 151
-           C109 138 111 111 108 86 C107 68 101 60 93 60 Z" fill="#17171b"/>
-  <path d="M147 60 C156 60 162 71 160 90 C158 114 152 137 139 151
-           C131 138 129 111 132 86 C133 68 139 60 147 60 Z" fill="#17171b"/>
+  <!-- blush cheeks -->
+  <ellipse cx="80" cy="138" rx="13" ry="8.5" fill="#ff9fb2" opacity="0.8"/>
+  <ellipse cx="160" cy="138" rx="13" ry="8.5" fill="#ff9fb2" opacity="0.8"/>
 
-  <!-- eyes set inside the stripes -->
-  <circle cx="94" cy="100" r="5.5" fill="#f4f5f7"/>
-  <circle cx="146" cy="100" r="5.5" fill="#f4f5f7"/>
+  <!-- badger eye-stripes (the signature), softened -->
+  <path d="M96 60 C82 60 76 76 78 98 C80 122 88 140 100 150
+           C108 138 112 116 112 94 C112 72 108 60 96 60 Z" fill="#17171b"/>
+  <path d="M144 60 C158 60 164 76 162 98 C160 122 152 140 140 150
+           C132 138 128 116 128 94 C128 72 132 60 144 60 Z" fill="#17171b"/>
 
-  <!-- nose -->
-  <path d="M120 150 C133 150 135 161 126 169 C122 173 118 173 114 169
-           C105 161 107 150 120 150 Z" fill="#17171b"/>
+  <!-- big cute eyes sitting in the stripes -->
+  <circle cx="95" cy="104" r="14" fill="#ffffff"/>
+  <circle cx="145" cy="104" r="14" fill="#ffffff"/>
+  <circle cx="96" cy="106" r="9" fill="#17171b"/>
+  <circle cx="146" cy="106" r="9" fill="#17171b"/>
+  <circle cx="100" cy="102" r="3.4" fill="#ffffff"/>
+  <circle cx="150" cy="102" r="3.4" fill="#ffffff"/>
+  <circle cx="92" cy="110" r="2" fill="#ffffff"/>
+  <circle cx="142" cy="110" r="2" fill="#ffffff"/>
+
+  <!-- little nose -->
+  <path d="M120 144 C131 144 134 154 127 161 C123 165 117 165 113 161
+           C106 154 109 144 120 144 Z" fill="#17171b"/>
+  <ellipse cx="116" cy="151" rx="3" ry="1.8" fill="#ffffff" opacity="0.55"/>
+
+  <!-- soft smile -->
+  <path d="M108 168 Q120 179 132 168" fill="none" stroke="#17171b"
+        stroke-width="3.2" stroke-linecap="round"/>
 </svg>
