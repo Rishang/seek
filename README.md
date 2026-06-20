@@ -23,11 +23,11 @@
 
 **seek is a web tool for CLI coding agents — not for humans.**
 
-Coding agents running open-source models — OpenCode, pi, Kilo Code, and friends — usually ship without web access. They can't pull the current version of a library, a breaking API change, or today's doc page; they answer from stale training data instead.
+Terminal coding agents — Claude Code, OpenCode, Cline, Aider, Kilo Code, Gemini CLI, and friends — are where real work happens now. But most of them, especially the ones running open-source models, ship without reliable web access. They can't pull the current version of a library, a breaking API change, or today's doc page; they answer from stale training data instead.
 
-seek is the missing tool you hand the agent. One command in front of seven search / scrape / crawl providers, with automatic failover so a rate-limited or dead key never stalls the agent mid-task. You install it and point your agent at the bundled **web-fetch skill**; the agent does the rest — a cheap *search → decide → scrape* loop for up-to-date docs, run entirely by the model, not by you.
+seek is the missing tool you hand the agent. One command in front of seven search / scrape / crawl providers, with automatic failover so a rate-limited or dead key never stalls the agent mid-task. You install it once, wire it into your agent (a **skill** for Claude Code, an **MCP server** for everything that speaks MCP), and the agent does the rest — a cheap *search → decide → scrape* loop for up-to-date docs, run entirely by the model, not by you.
 
-The human's job is one-time setup (`seek config init`, drop in the skill). After that every `seek` call is made by an agent. That framing drives every design choice below: CSV-first output to save tokens, snippet-before-scrape guards in the skill, invisible failover, and an MCP/HTTP surface so *any* agent — including the one reading this — can call it.
+The human's job is one-time setup (`seek config init`, then wire it in). After that every `seek` call is made by an agent. That framing drives every design choice below: CSV-first output to save tokens, snippet-before-scrape guards in the skill, invisible failover, and an MCP/HTTP surface so *any* agent — including the one reading this — can call it.
 
 ## For coding agents
 
@@ -41,7 +41,15 @@ This is the whole point. Most open-source-model agents have no built-in web acce
 
 The skill encodes hard token-budget guards — snippets before scrapes, one page at a time, pipe large `llms.txt` indexes through `rg`, no `crawl` unless explicitly asked — so research stays cheap. Failover is invisible to the agent: it calls `seek search`, and whichever provider answers first wins.
 
-The CLI skill is the MVP for terminal coding agents. seek also runs as a server for everything else: [`seek mcp`](#seek-mcp--mcp-server) speaks the Model Context Protocol over stdio so any MCP-capable agent can call the same search/scrape/crawl tools, and [`seek serve`](#seek-serve--http-api) exposes them as an HTTP+JSON API.
+### Wire it into your agent
+
+Two integration paths, pick the one your agent speaks:
+
+- **Skill** (Claude Code, and anything with an Agent-Skills directory) — drop [`skills/SKILL.md`](skills/SKILL.md) into the agent's skills folder (e.g. `~/.claude/skills/web-fetch/SKILL.md`). The agent reads it and learns the cheap loop above.
+- **MCP server** (OpenCode, Cline, Kilo Code, Gemini CLI, Cursor — anything that speaks MCP) — register `seek mcp` as a stdio MCP server. It exposes `search`, `scrape`, and `crawl` as tools, same providers and failover. See [`seek mcp`](#seek-mcp--mcp-server).
+- **HTTP+JSON** (anything else) — run [`seek serve`](#seek-serve--http-api) and call the endpoints directly.
+
+Exact registration differs per agent, but it's always one of: "add a skill file" or "add an MCP server whose command is `seek mcp`."
 
 ## Why not just give the agent a provider SDK?
 
@@ -72,9 +80,48 @@ seek search "rust async runtimes"
 
 Index `0` in `providers.priority` is highest priority. Membership comes from which keys you've configured; a provider with no key is simply skipped. `crawl` defaults to `firecrawl` (no failover).
 
+## Providers
+
+Seven providers, one interface. Configure one or all of them; `auto` uses whatever has a key.
+
+| Provider | search | scrape | crawl | Key env var |
+|----------|:------:|:------:|:-----:|-------------|
+| firecrawl | ✓ | ✓ | ✓ | `FIRECRAWL_API_KEY` |
+| tavily | ✓ | ✓ | ✓ | `TAVILY_API_KEY` |
+| spider.cloud | ✓ | ✓ | ✓ | `SPIDER_API_KEY` |
+| webcrawlerapi | | ✓ | ✓ | `WEBCRAWLERAPI_API_KEY` |
+| lightpanda | | ✓ | | `LIGHTPANDA_API_KEY` |
+| brave | ✓ | | | `BRAVE_API_KEY` |
+| exa | ✓ | ✓ | | `EXA_API_KEY` |
+
+`firecrawl` and `lightpanda` are self-hostable; set a `host` (via `seek config init --host name=url`) to point at your own instance. An env var, when set, overrides the key stored in `provider.yaml`.
+
 ## Install (one-time, by you)
 
-This is the human part. seek builds from source — you need Go 1.25+ (and optionally [Task](https://taskfile.dev) for the shortcuts).
+This is the human part — do it once, then hand seek to the agent. Pick whichever fits your setup; all of them drop a `seek` binary on your `PATH`.
+
+**Install script** (Linux/macOS, downloads the matching release binary):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/install.sh | sh
+# pin a version or install dir:
+#   SEEK_VERSION=v0.1.0 SEEK_BIN_DIR=~/.local/bin sh -c "$(curl -fsSL .../install.sh)"
+```
+
+**[mise](https://mise.jdx.dev)** (installs the GitHub release binary via its `ubi` backend):
+
+```bash
+mise use -g ubi:Rishang/seek          # latest, on your global toolset
+mise use -g ubi:Rishang/seek@0.1.0    # pin a version
+```
+
+**[ubi](https://github.com/houseabsolute/ubi)** — the "install release" universal binary installer, straight from the GitHub release:
+
+```bash
+ubi --project Rishang/seek --in ~/.local/bin
+```
+
+**From source** (needs Go 1.25+, and optionally [Task](https://taskfile.dev)):
 
 ```bash
 git clone https://github.com/rishang/seek
@@ -83,7 +130,7 @@ task build            # or: cd src && go build -o ../bin/seek .
 ./bin/seek --help
 ```
 
-Put `bin/seek` on the agent's `PATH` and you're done.
+Supported release targets: Linux and macOS on `amd64`/`arm64`, plus Windows `.zip` archives on the [releases page](https://github.com/Rishang/seek/releases). Put `seek` on the agent's `PATH` and you're done.
 
 ## Setup & wiring the agent
 
@@ -163,20 +210,6 @@ seek mcp
 ```
 
 Speaks the Model Context Protocol over stdio (newline-delimited JSON-RPC 2.0): `initialize`, `tools/list`, `tools/call`. It exposes three tools — `search`, `scrape`, `crawl` — backed by the same provider factory and failover. Requests are handled concurrently; logs go to stderr so stdout stays a clean protocol channel. Point any MCP-capable agent at the `seek mcp` command.
-
-## Providers
-
-| Provider | search | scrape | crawl | Key env var |
-|----------|:------:|:------:|:-----:|-------------|
-| firecrawl | ✓ | ✓ | ✓ | `FIRECRAWL_API_KEY` |
-| tavily | ✓ | ✓ | ✓ | `TAVILY_API_KEY` |
-| spider.cloud | ✓ | ✓ | ✓ | `SPIDER_API_KEY` |
-| webcrawlerapi | | ✓ | ✓ | `WEBCRAWLERAPI_API_KEY` |
-| lightpanda | | ✓ | | `LIGHTPANDA_API_KEY` |
-| brave | ✓ | | | `BRAVE_API_KEY` |
-| exa | ✓ | ✓ | | `EXA_API_KEY` |
-
-`firecrawl` and `lightpanda` are self-hostable; set a `host` (via `seek config init --host name=url`) to point at your own instance. An env var, when set, overrides the key stored in `provider.yaml`.
 
 ## Configuration
 

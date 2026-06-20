@@ -1,0 +1,68 @@
+name: release
+
+# Build static seek binaries for every supported platform and attach them to
+# the GitHub Release when a v* tag is pushed. install.sh and the `ubi`/`mise`
+# install paths in the README download these assets.
+#
+# ponytail: single build job loops the platform matrix instead of a CI matrix,
+# so all checksums land in one checksums.txt. Pure-Go deps (modernc.org/sqlite)
+# mean CGO_ENABLED=0 cross-compiles cleanly — no per-OS runners needed.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write   # needed to create the Release and upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: src/go.sum
+
+      - name: Build all platforms
+        working-directory: src
+        env:
+          CGO_ENABLED: "0"
+          VERSION: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p ../dist
+          # Supported devices: GOOS/GOARCH pairs.
+          platforms="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+          for p in $platforms; do
+            export GOOS=${p%/*} GOARCH=${p#*/}
+            bin="seek"
+            [ "$GOOS" = "windows" ] && bin="seek.exe"
+            echo "==> $GOOS/$GOARCH"
+            go build -trimpath -ldflags "-s -w" -o "$bin" .
+            base="seek_${VERSION}_${GOOS}_${GOARCH}"
+            if [ "$GOOS" = "windows" ]; then
+              zip -q "../dist/${base}.zip" "$bin"
+            else
+              tar -czf "../dist/${base}.tar.gz" "$bin"
+            fi
+            rm -f "$bin"
+          done
+          cd ../dist
+          sha256sum * > checksums.txt
+          ls -la
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: dist/*
+          generate_release_notes: true
