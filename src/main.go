@@ -129,7 +129,7 @@ func searchCmd() *cli.Command {
 		Usage:     "Run a web search",
 		UsageText: "seek search [-p provider] [--start DD/MM/YYYY] [--end DD/MM/YYYY] [--range N] <query>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: firecrawl, tavily, spider.cloud, brave, exa"),
+			providerFlag("Provider: auto (default), firecrawl, tavily, spider.cloud, brave, exa"),
 			&cli.StringFlag{Name: "start", Usage: "Only results published on/after this date (DD/MM/YYYY)"},
 			&cli.StringFlag{Name: "end", Usage: "Only results published on/before this date (DD/MM/YYYY)"},
 			&cli.IntFlag{Name: "range", Usage: "Only results from the last N days (today back N days)"},
@@ -229,7 +229,7 @@ func scrapeCmd() *cli.Command {
 		Usage:     "Extract content from a URL",
 		UsageText: "seek scrape [-p provider] [-f format] <url>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda, exa"),
+			providerFlag("Provider: auto (default), firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda, exa"),
 			&cli.StringFlag{
 				Name:    "format",
 				Aliases: []string{"f"},

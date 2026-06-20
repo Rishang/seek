@@ -239,7 +239,12 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 			fmt.Println("Cancelled; no changes written.")
 			return nil
 		}
-		if err := runCredsForm(creds, selectedProviders(c)); err != nil {
+		autoNames, err := gatherAutoMembership(c, creds)
+		if err != nil {
+			return err
+		}
+		names := mergeUnique(selectedProviders(c), autoNames)
+		if err := runCredsForm(creds, names); err != nil {
 			return err
 		}
 	} else {
@@ -266,14 +271,61 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// selectedProviders returns the distinct providers chosen across the operations.
+// selectedProviders returns the distinct real providers chosen across the
+// operations. "auto" is not a real provider and is dropped — auto membership is
+// gathered separately (see autoMembership).
 func selectedProviders(c config.Config) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, name := range []string{c.Search.Provider, c.Scrape.Provider, c.Crawl.Provider} {
-		if name != "" && !seen[name] {
-			seen[name] = true
-			out = append(out, name)
+		if name == "" || name == "auto" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}
+
+// autoMembership returns the capable providers for an op, in defaultAutoChains
+// order, used to populate the "which providers to set up for auto" multi-select.
+func autoMembership(op string, _ map[string]config.Credential) []string {
+	capable := map[string]bool{}
+	var all []string
+	switch op {
+	case "search":
+		all = searchProviders
+	case "scrape":
+		all = scrapeProviders
+	}
+	for _, n := range all {
+		capable[n] = true
+	}
+	var out []string
+	seen := map[string]bool{}
+	add := func(names []string) {
+		for _, n := range names {
+			if capable[n] && !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	add(defaultAutoChains[op])
+	add(all)
+	return out
+}
+
+// mergeUnique concatenates name lists, preserving order and dropping duplicates.
+func mergeUnique(lists ...[]string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range lists {
+		for _, n := range l {
+			if n != "" && !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
 		}
 	}
 	return out
@@ -291,14 +343,14 @@ func pruneEmptyCreds(creds map[string]config.Credential) {
 func applyInitFlags(cmd *cli.Command, c *config.Config, creds map[string]config.Credential) error {
 	if cmd.IsSet("search") {
 		v := cmd.String("search")
-		if err := validateProvider("search", v, searchProviders); err != nil {
+		if err := validateProvider("search", v, append([]string{"auto"}, searchProviders...)); err != nil {
 			return err
 		}
 		c.Search.Provider = v
 	}
 	if cmd.IsSet("scrape") {
 		v := cmd.String("scrape")
-		if err := validateProvider("scrape", v, scrapeProviders); err != nil {
+		if err := validateProvider("scrape", v, append([]string{"auto"}, scrapeProviders...)); err != nil {
 			return err
 		}
 		c.Scrape.Provider = v
@@ -366,8 +418,8 @@ func setCacheEnabled(c *config.CacheConfig, on bool) {
 // runConfigForm drives the interactive settings TUI, mutating c. It returns
 // false when the user cancels.
 func runConfigForm(c *config.Config, path string, assumeYes bool) (bool, error) {
-	searchP := orValue(c.Search.Provider, "firecrawl")
-	scrapeP := orValue(c.Scrape.Provider, "firecrawl")
+	searchP := orValue(c.Search.Provider, "auto")
+	scrapeP := orValue(c.Scrape.Provider, "auto")
 	crawlP := orValue(c.Crawl.Provider, "firecrawl")
 	format := orValue(string(c.Scrape.Options.OutputFormat), "markdown")
 	scrapeCache := c.Scrape.Cache.IsEnabled()
@@ -378,9 +430,9 @@ func runConfigForm(c *config.Config, path string, assumeYes bool) (bool, error) 
 	groups := []*huh.Group{
 		huh.NewGroup(
 			huh.NewSelect[string]().Title("Search provider").
-				Options(huh.NewOptions(searchProviders...)...).Value(&searchP),
+				Options(huh.NewOptions(append([]string{"auto"}, searchProviders...)...)...).Value(&searchP),
 			huh.NewSelect[string]().Title("Scrape provider").
-				Options(huh.NewOptions(scrapeProviders...)...).Value(&scrapeP),
+				Options(huh.NewOptions(append([]string{"auto"}, scrapeProviders...)...)...).Value(&scrapeP),
 			huh.NewSelect[string]().Title("Scrape output format").
 				Options(huh.NewOptions("markdown", "html", "json")...).Value(&format),
 			huh.NewSelect[string]().Title("Crawl provider").
@@ -426,6 +478,52 @@ func runConfigForm(c *config.Config, path string, assumeYes bool) (bool, error) 
 		c.Crawl.Cache.TTLSecs = n * 86400
 	}
 	return true, nil
+}
+
+// gatherAutoMembership prompts (multi-select) for which providers to set up for
+// each op currently set to "auto", pre-checking those already configured. It
+// returns the union of picks. It writes nothing to config.yaml — provider.yaml
+// (the keys entered) is the source of auto membership.
+func gatherAutoMembership(c config.Config, creds map[string]config.Credential) ([]string, error) {
+	values := map[string]*[]string{}
+	var fields []huh.Field
+
+	addGroup := func(op, title, sel string) {
+		if sel != "auto" {
+			return
+		}
+		opts := autoMembership(op, creds)
+		var pre []string
+		for _, n := range opts {
+			if creds[n].APIKey != "" || creds[n].Host != "" {
+				pre = append(pre, n)
+			}
+		}
+		v := pre
+		values[op] = &v
+		fields = append(fields, huh.NewMultiSelect[string]().
+			Title(title).
+			Options(huh.NewOptions(opts...)...).
+			Value(values[op]))
+	}
+	addGroup("search", "Providers to set up for auto search", c.Search.Provider)
+	addGroup("scrape", "Providers to set up for auto scrape", c.Scrape.Provider)
+
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
+		if err == huh.ErrUserAborted {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var out []string
+	for _, vp := range values {
+		out = append(out, *vp...)
+	}
+	return out, nil
 }
 
 // runCredsForm prompts (masked) for the API key of each selected provider —
