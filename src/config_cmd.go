@@ -519,9 +519,13 @@ func gatherAutoMembership(c config.Config, creds map[string]config.Credential) (
 		return nil, err
 	}
 
+	// Iterate ops in a fixed order so the credential prompts are deterministic
+	// (map iteration order would otherwise vary run to run).
 	var out []string
-	for _, vp := range values {
-		out = append(out, *vp...)
+	for _, op := range []string{"search", "scrape"} {
+		if vp, ok := values[op]; ok {
+			out = append(out, *vp...)
+		}
 	}
 	return out, nil
 }
