@@ -1,0 +1,66 @@
+name: release
+
+# Build cross-platform binaries and attach them to a GitHub Release.
+# Triggered by pushing a semver tag (e.g. v1.2.3).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pure-Go build (modernc.org/sqlite), so CGO_ENABLED=0 cross-compiles
+      # cleanly for every target — see Taskfile build:release.
+      - name: Build
+        run: task build:release GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} VERSION=${{ github.ref_name }}
+
+      - name: Package
+        id: package
+        env:
+          TAG: ${{ github.ref_name }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          cd dist
+          bin="seek-${GOOS}-${GOARCH}"
+          base="seek-${TAG}-${GOOS}-${GOARCH}"
+          if [ "$GOOS" = "windows" ]; then
+            zip "${base}.zip" "${bin}.exe"
+            echo "asset=dist/${base}.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "${base}.tar.gz" "$bin"
+            echo "asset=dist/${base}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.package.outputs.asset }}

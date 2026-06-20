@@ -166,6 +166,9 @@ type ScrapeResult struct {
 	URL     string `json:"url"`
 	Content string `json:"content"`
 	Format  string `json:"format"`
+	// Cached reports whether this result was served from the cache. It is a
+	// transient signal for the caller (e.g. to log a hit), never serialized.
+	Cached bool `json:"-"`
 }
 
 // CrawlResult holds the result of a crawl request.
