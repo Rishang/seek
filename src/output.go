@@ -12,7 +12,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// outputFlag selects how results are printed. Distinct from scrape's --format,
+// outputFlag selects how results are printed. Distinct from fetch's --format,
 // which controls the page-content representation requested from the provider.
 var outputFlag = &cli.StringFlag{
 	Name:    "output",

@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <strong>search &middot; scrape &middot; crawl &middot; 7 providers &middot; one interface &middot; automatic failover</strong>
+  <strong>search &middot; fetch &middot; crawl &middot; 7 providers &middot; one interface &middot; automatic failover</strong>
 </p>
 
 ---
@@ -25,9 +25,9 @@
 
 Terminal coding agents — Claude Code, OpenCode, Cline, Aider, Kilo Code, Gemini CLI, and friends — are where real work happens now. But most of them, especially the ones running open-source models, ship without reliable web access. They can't pull the current version of a library, a breaking API change, or today's doc page; they answer from stale training data instead.
 
-seek is the missing tool you hand the agent. One command in front of seven search / scrape / crawl providers, with automatic failover so a rate-limited or dead key never stalls the agent mid-task. You install it once, wire it into your agent (a **skill** for Claude Code, an **MCP server** for everything that speaks MCP), and the agent does the rest — a cheap *search → decide → scrape* loop for up-to-date docs, run entirely by the model, not by you.
+seek is the missing tool you hand the agent. One command in front of seven search / fetch / crawl providers, with automatic failover so a rate-limited or dead key never stalls the agent mid-task. You install it once, wire it into your agent (a **skill** for Claude Code, an **MCP server** for everything that speaks MCP), and the agent does the rest — a cheap *search → decide → fetch* loop for up-to-date docs, run entirely by the model, not by you.
 
-The human's job is one-time setup (`seek config init`, then wire it in). After that every `seek` call is made by an agent. That framing drives every design choice below: CSV-first output to save tokens, snippet-before-scrape guards in the skill, invisible failover, and an MCP/HTTP surface so *any* agent — including the one reading this — can call it.
+The human's job is one-time setup (`seek config init`, then wire it in). After that every `seek` call is made by an agent. That framing drives every design choice below: CSV-first output to save tokens, snippet-before-fetch guards in the skill, invisible failover, and an MCP/HTTP surface so *any* agent — including the one reading this — can call it.
 
 ## For coding agents
 
@@ -36,17 +36,17 @@ This is the whole point. Most open-source-model agents have no built-in web acce
 [`skills/SKILL.md`](skills/SKILL.md) is a `web-fetch` skill. Put `seek` on the agent's `PATH` and point the agent at the skill (copy or symlink it into the agent's skills directory), and it learns the loop:
 
 1. `seek search -o csv "<query>"` → read the snippets. The snippet is substantial — often it already *is* the answer, so it stops there.
-2. Only if a detail is missing, `seek scrape "<url>"` the single best result → full markdown.
+2. Only if a detail is missing, `seek fetch "<url>"` the single best result → full markdown.
 3. Stop the moment the objective is met.
 
-The skill encodes hard token-budget guards — snippets before scrapes, one page at a time, pipe large `llms.txt` indexes through `rg`, no `crawl` unless explicitly asked — so research stays cheap. Failover is invisible to the agent: it calls `seek search`, and whichever provider answers first wins.
+The skill encodes hard token-budget guards — snippets before fetchs, one page at a time, pipe large `llms.txt` indexes through `rg`, no `crawl` unless explicitly asked — so research stays cheap. Failover is invisible to the agent: it calls `seek search`, and whichever provider answers first wins.
 
 ### Wire it into your agent
 
 Two integration paths, pick the one your agent speaks:
 
 - **Skill** (Claude Code, and anything with an Agent-Skills directory) — drop [`skills/SKILL.md`](skills/SKILL.md) into the agent's skills folder (e.g. `~/.claude/skills/web-fetch/SKILL.md`). The agent reads it and learns the cheap loop above.
-- **MCP server** (OpenCode, Cline, Kilo Code, Gemini CLI, Cursor — anything that speaks MCP) — register `seek mcp` as a stdio MCP server. It exposes `search`, `scrape`, and `crawl` as tools, same providers and failover. See [`seek mcp`](#seek-mcp--mcp-server).
+- **MCP server** (OpenCode, Cline, Kilo Code, Gemini CLI, Cursor — anything that speaks MCP) — register `seek mcp` as a stdio MCP server. It exposes `search`, `fetch`, and `crawl` as tools, same providers and failover. See [`seek mcp`](#seek-mcp--mcp-server).
 - **HTTP+JSON** (anything else) — run [`seek serve`](#seek-serve--http-api) and call the endpoints directly.
 
 Exact registration differs per agent, but it's always one of: "add a skill file" or "add an MCP server whose command is `seek mcp`."
@@ -77,7 +77,7 @@ seek search "rust async runtimes"
 
 ## How it works
 
-`search` and `scrape` default to the `auto` provider. It never restricts which providers you can use — it just orders them:
+`search` and `fetch` default to the `auto` provider. It never restricts which providers you can use — it just orders them:
 
 ```
 seek search "rust async runtimes"
@@ -96,7 +96,7 @@ Index `0` in `providers.priority` is highest priority. Membership comes from whi
 
 Seven providers, one interface. Configure one or all of them; `auto` uses whatever has a key.
 
-| Provider | search | scrape | crawl | Key env var |
+| Provider | search | fetch | crawl | Key env var |
 |----------|:------:|:------:|:-----:|-------------|
 | firecrawl | ✓ | ✓ | ✓ | `FIRECRAWL_API_KEY` |
 | tavily | ✓ | ✓ | ✓ | `TAVILY_API_KEY` |
@@ -156,7 +156,7 @@ cp skills/SKILL.md <your-agent>/skills/web-fetch/   # or symlink it
 
 # 3. (Optional) sanity-check the commands the agent will run
 seek search "best go web frameworks 2026"
-seek scrape https://go.dev -f markdown
+seek fetch https://go.dev -f markdown
 seek config view                                  # what's configured, which keys are set
 ```
 
@@ -171,9 +171,9 @@ seek config init --search auto --key firecrawl=fc-xxx --key tavily=tvly-xxx --ye
 | Command | What it does |
 |---------|--------------|
 | `seek search <query>` | Web search across providers (`auto` by default). |
-| `seek scrape <url>` | Extract a page as markdown, html, or json. Prints the raw content. |
+| `seek fetch <url>` | Fetch a page and extract it as markdown, html, or json. Prints the raw content. |
 | `seek crawl <url>` | Crawl a site and return its pages. |
-| `seek serve` | Run an HTTP API (JSON) for search/scrape/crawl, with Swagger docs at `/docs`. |
+| `seek serve` | Run an HTTP API (JSON) for search/fetch/crawl, with Swagger docs at `/docs`. |
 | `seek mcp` | Run an MCP server over stdio so MCP-capable agents can call the same tools. |
 | `seek config init` | Create or edit `config.yaml` and provider keys — interactive form, or pass flags / pipe input for non-interactive mode. |
 | `seek config view` | Show the effective configuration and which API keys are set. |
@@ -186,10 +186,10 @@ Global: `-v, --verbose` prints debug logs (including each `auto` failover, every
 | Command | Flags |
 |---------|-------|
 | `search` | `-p/--provider`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N` (last N days), `-o/--output json\|csv`, `--no-cache` |
-| `scrape` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
+| `fetch` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o/--output json\|csv`, `--no-cache` |
 | `serve` | `--addr host:port` (default `127.0.0.1:8787`), `--token` (or `SEEK_SERVE_TOKEN`) |
-| `config init` | `--search`, `--scrape`, `--crawl`, `--format`, `--ttl <days>`, `--cache`, `--store`, `--key name=value`, `--host name=url`, `--path`, `-y/--yes` |
+| `config init` | `--search`, `--fetch`, `--crawl`, `--format`, `--ttl <days>`, `--cache`, `--store`, `--key name=value`, `--host name=url`, `--path`, `-y/--yes` |
 
 ## Serve & MCP
 
@@ -206,7 +206,7 @@ JSON endpoints (each request is handled concurrently by `net/http`):
 ```bash
 curl -s localhost:8787/search -H "Authorization: Bearer $TOKEN" \
   -d '{"query":"rust async runtimes","range":7}'
-curl -s localhost:8787/scrape -H "Authorization: Bearer $TOKEN" \
+curl -s localhost:8787/fetch -H "Authorization: Bearer $TOKEN" \
   -d '{"url":"https://go.dev","format":"markdown"}'
 curl -s localhost:8787/crawl  -H "Authorization: Bearer $TOKEN" \
   -d '{"url":"https://go.dev/doc"}'
@@ -222,7 +222,7 @@ curl -s localhost:8787/crawl  -H "Authorization: Bearer $TOKEN" \
 seek mcp
 ```
 
-Speaks the Model Context Protocol over stdio (newline-delimited JSON-RPC 2.0): `initialize`, `tools/list`, `tools/call`. It exposes three tools — `search`, `scrape`, `crawl` — backed by the same provider factory and failover. Requests are handled concurrently; logs go to stderr so stdout stays a clean protocol channel. Point any MCP-capable agent at the `seek mcp` command.
+Speaks the Model Context Protocol over stdio (newline-delimited JSON-RPC 2.0): `initialize`, `tools/list`, `tools/call`. It exposes three tools — `search`, `fetch`, `crawl` — backed by the same provider factory and failover. Requests are handled concurrently; logs go to stderr so stdout stays a clean protocol channel. Point any MCP-capable agent at the `seek mcp` command.
 
 ## Configuration
 
@@ -234,7 +234,7 @@ Settings live in `config.yaml`; secrets live in a separate `provider.yaml` (writ
 config:
   search:
     provider: auto
-  scrape:
+  fetch:
     provider: auto
     cache:
       enabled: true
@@ -272,7 +272,7 @@ providers:
 
 ### Caching
 
-`scrape` and `crawl` results are cached in a local SQLite store; `search` always hits the provider live. Use `--no-cache` to bypass the cache for a single request.
+`fetch` and `crawl` results are cached in a local SQLite store; `search` always hits the provider live. Use `--no-cache` to bypass the cache for a single request.
 
 ### Environment variables
 

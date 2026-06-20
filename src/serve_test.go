@@ -62,7 +62,7 @@ func TestServeValidation(t *testing.T) {
 
 	// Unknown field is rejected.
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/scrape", strings.NewReader(`{"url":"x","bogus":1}`)))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/fetch", strings.NewReader(`{"url":"x","bogus":1}`)))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown field: want 400, got %d", rec.Code)
 	}

@@ -45,7 +45,7 @@ func TestMCPToolsListHasThreeTools(t *testing.T) {
 	if !ok || len(tools) != 3 {
 		t.Fatalf("want 3 tools, got %v", res["tools"])
 	}
-	want := map[string]bool{"search": false, "scrape": false, "crawl": false}
+	want := map[string]bool{"search": false, "fetch": false, "crawl": false}
 	for _, tl := range tools {
 		name := tl.(map[string]any)["name"].(string)
 		if _, ok := want[name]; !ok {

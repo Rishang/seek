@@ -50,7 +50,7 @@ const openAPISpec = `{
   "openapi": "3.0.3",
   "info": {
     "title": "seek HTTP API",
-    "description": "Web search, scrape, and crawl across pluggable providers with automatic failover.",
+    "description": "Web search, fetch, and crawl across pluggable providers with automatic failover.",
     "version": "0.1.0"
   },
   "servers": [{ "url": "/" }],
@@ -85,7 +85,7 @@ const openAPISpec = `{
           "results": { "type": "array", "items": { "$ref": "#/components/schemas/SearchResult" } }
         }
       },
-      "ScrapeRequest": {
+      "FetchRequest": {
         "type": "object",
         "required": ["url"],
         "properties": {
@@ -94,7 +94,7 @@ const openAPISpec = `{
           "format": { "type": "string", "enum": ["markdown", "html", "json"] }
         }
       },
-      "ScrapeResult": {
+      "FetchResult": {
         "type": "object",
         "properties": {
           "url": { "type": "string" },
@@ -141,15 +141,15 @@ const openAPISpec = `{
         }
       }
     },
-    "/scrape": {
+    "/fetch": {
       "post": {
         "summary": "Extract a single page",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScrapeRequest" } } }
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FetchRequest" } } }
         },
         "responses": {
-          "200": { "description": "Scraped page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScrapeResult" } } } },
+          "200": { "description": "Fetched page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FetchResult" } } } },
           "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "401": { "description": "Unauthorized" },
           "502": { "description": "Provider error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }

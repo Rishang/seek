@@ -1,6 +1,6 @@
 # `seek serve` — HTTP API
 
-`seek serve` exposes the same search/scrape/crawl operations as the CLI over a
+`seek serve` exposes the same search/fetch/crawl operations as the CLI over a
 small JSON HTTP API, backed by the shared provider factory and `auto` failover.
 
 ## Endpoints
@@ -8,7 +8,7 @@ small JSON HTTP API, backed by the shared provider factory and `auto` failover.
 | Method | Path            | Auth | Body / notes |
 |--------|-----------------|------|--------------|
 | POST   | `/search`       | yes  | `{"query","provider?","range?","start?","end?"}` → `{"results":[...]}` |
-| POST   | `/scrape`       | yes  | `{"url","provider?","format?"}` → `ScrapeResult` |
+| POST   | `/fetch`       | yes  | `{"url","provider?","format?"}` → `FetchResult` |
 | POST   | `/crawl`        | yes  | `{"url","provider?"}` → `CrawlResult` |
 | GET    | `/healthz`      | no   | liveness, returns `ok` |
 | GET    | `/openapi.json` | no   | OpenAPI 3.0 spec |
@@ -20,7 +20,7 @@ shared `buildTimeRange` (same semantics as the `search` CLI flags).
 ## Concurrency
 
 `net/http` serves every request in its own goroutine, so the API is concurrent
-by default. The operation runners (`opSearch`/`opScrape`/`opCrawl` in `ops.go`)
+by default. The operation runners (`opSearch`/`opFetch`/`opCrawl` in `ops.go`)
 only *read* the factory, which is built once in `main()` and never mutated
 afterward, so concurrent requests are safe. Each `auto` call builds its own
 failover chain instance, so per-request attempt state never collides.

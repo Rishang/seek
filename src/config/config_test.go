@@ -23,18 +23,18 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if cfg.Search.Provider != "auto" {
 		t.Fatalf("expected default provider auto, got %q", cfg.Search.Provider)
 	}
-	if !cfg.Scrape.Cache.IsEnabled() {
+	if !cfg.Fetch.Cache.IsEnabled() {
 		t.Fatal("expected caching enabled by default")
 	}
-	if cfg.Scrape.Options.OutputFormat != FormatMarkdown {
-		t.Fatalf("expected default format markdown, got %q", cfg.Scrape.Options.OutputFormat)
+	if cfg.Fetch.Options.OutputFormat != FormatMarkdown {
+		t.Fatalf("expected default format markdown, got %q", cfg.Fetch.Options.OutputFormat)
 	}
 }
 
 func TestLoadOverlaysOntoDefaults(t *testing.T) {
 	path := writeConfig(t, `
 config:
-  scrape:
+  fetch:
     provider: lightpanda
     cache:
       enabled: false
@@ -48,17 +48,17 @@ config:
 	}
 
 	// Overridden fields.
-	if cfg.Scrape.Provider != "lightpanda" {
-		t.Fatalf("scrape provider = %q", cfg.Scrape.Provider)
+	if cfg.Fetch.Provider != "lightpanda" {
+		t.Fatalf("fetch provider = %q", cfg.Fetch.Provider)
 	}
-	if cfg.Scrape.Cache.IsEnabled() {
-		t.Fatal("expected scrape caching disabled")
+	if cfg.Fetch.Cache.IsEnabled() {
+		t.Fatal("expected fetch caching disabled")
 	}
-	if got := cfg.Scrape.Cache.TTL().Seconds(); got != 60 {
+	if got := cfg.Fetch.Cache.TTL().Seconds(); got != 60 {
 		t.Fatalf("ttl = %v, want 60s", got)
 	}
-	if cfg.Scrape.Options.OutputFormat != FormatHTML {
-		t.Fatalf("format = %q", cfg.Scrape.Options.OutputFormat)
+	if cfg.Fetch.Options.OutputFormat != FormatHTML {
+		t.Fatalf("format = %q", cfg.Fetch.Options.OutputFormat)
 	}
 
 	// Untouched operations keep their defaults; crawl caching stays enabled.

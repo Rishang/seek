@@ -20,7 +20,7 @@ func newTestStore(t *testing.T) Store {
 func TestStoreSetGet(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	key := Key{Op: "scrape", Provider: "firecrawl", URL: "https://example.com", Format: "markdown"}
+	key := Key{Op: "fetch", Provider: "firecrawl", URL: "https://example.com", Format: "markdown"}
 
 	if _, ok, err := store.Get(ctx, key); ok || err != nil {
 		t.Fatalf("expected miss on empty store, got ok=%v err=%v", ok, err)

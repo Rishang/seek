@@ -19,8 +19,8 @@ type opCache struct {
 // accessor returns a cache-wrapped provider.
 type Factory struct {
 	providers map[string]Provider
-	caches    map[string]opCache  // keyed by "search" | "scrape" | "crawl"
-	chains    map[string][]string // auto candidate order, keyed by "search" | "scrape"
+	caches    map[string]opCache  // keyed by "search" | "fetch" | "crawl"
+	chains    map[string][]string // auto candidate order, keyed by "search" | "fetch"
 }
 
 // NewFactory builds providers from the given list of ProviderConfig entries.
@@ -56,7 +56,7 @@ func NewFactory(providers []config.ProviderConfig) *Factory {
 	return f
 }
 
-// SetCache enables caching for a single operation ("search", "scrape", or
+// SetCache enables caching for a single operation ("search", "fetch", or
 // "crawl") using the given store and TTL.
 func (f *Factory) SetCache(op string, store cache.Store, ttl time.Duration) {
 	f.caches[op] = opCache{store: store, ttl: ttl}
@@ -66,7 +66,7 @@ func (f *Factory) SetCache(op string, store cache.Store, ttl time.Duration) {
 func (f *Factory) DisableCache() { f.caches = make(map[string]opCache) }
 
 // SetAutoChain stores the ordered candidate provider names the "auto" provider
-// considers for an operation ("search" | "scrape"). The factory filters these
+// considers for an operation ("search" | "fetch"). The factory filters these
 // to configured + capable providers when building the meta-provider.
 func (f *Factory) SetAutoChain(op string, names []string) { f.chains[op] = names }
 
@@ -99,40 +99,40 @@ func (f *Factory) autoSearch() (SearchProvider, error) {
 	return newAutoSearch(chain), nil
 }
 
-// Scrape returns a provider that supports scrape, or an error. The name "auto"
+// Fetch returns a provider that supports fetch, or an error. The name "auto"
 // builds a failover chain.
-func (f *Factory) Scrape(name string) (ScrapeProvider, error) {
+func (f *Factory) Fetch(name string) (FetchProvider, error) {
 	var (
-		sp  ScrapeProvider
+		sp  FetchProvider
 		err error
 	)
 	if name == "auto" {
-		sp, err = f.autoScrape()
+		sp, err = f.autoFetch()
 	} else {
-		sp, err = capability[ScrapeProvider](f, name, "scrape")
+		sp, err = capability[FetchProvider](f, name, "fetch")
 	}
 	if err != nil {
 		return nil, err
 	}
-	if c, ok := f.caches["scrape"]; ok && c.store != nil {
-		return cachingScrape{ScrapeProvider: sp, store: c.store, provider: name, ttl: c.ttl}, nil
+	if c, ok := f.caches["fetch"]; ok && c.store != nil {
+		return cachingFetch{FetchProvider: sp, store: c.store, provider: name, ttl: c.ttl}, nil
 	}
 	return sp, nil
 }
 
-// autoScrape builds the scrape failover chain from the stored candidates,
+// autoFetch builds the fetch failover chain from the stored candidates,
 // keeping only configured + capable providers (order preserved).
-func (f *Factory) autoScrape() (ScrapeProvider, error) {
-	var chain []autoScrapeEntry
-	for _, n := range f.chains["scrape"] {
-		if sp, err := capability[ScrapeProvider](f, n, "scrape"); err == nil {
-			chain = append(chain, autoScrapeEntry{name: n, sp: sp})
+func (f *Factory) autoFetch() (FetchProvider, error) {
+	var chain []autoFetchEntry
+	for _, n := range f.chains["fetch"] {
+		if sp, err := capability[FetchProvider](f, n, "fetch"); err == nil {
+			chain = append(chain, autoFetchEntry{name: n, sp: sp})
 		}
 	}
 	if len(chain) == 0 {
-		return nil, fmt.Errorf("provider %q: no configured provider supports scrape", "auto")
+		return nil, fmt.Errorf("provider %q: no configured provider supports fetch", "auto")
 	}
-	return newAutoScrape(chain), nil
+	return newAutoFetch(chain), nil
 }
 
 // Crawl returns a provider that supports crawl, or an error.

@@ -1,4 +1,4 @@
-// Package cache provides transparent caching of provider search, scrape, and
+// Package cache provides transparent caching of provider search, fetch, and
 // crawl results. The default backend is SQLite; the Store interface allows
 // other backends (e.g. S3) to be added without touching callers.
 package cache
@@ -16,7 +16,7 @@ const DefaultTTL = 15 * 24 * time.Hour
 // Key uniquely identifies a cached result. URL holds the search query for
 // search operations; Format is empty when not applicable.
 type Key struct {
-	Op       string // "search" | "scrape" | "crawl"
+	Op       string // "search" | "fetch" | "crawl"
 	Provider string
 	URL      string
 	Format   string

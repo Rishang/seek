@@ -9,7 +9,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// WebCrawlerAPIProvider supports scrape and crawl via webcrawlerapi.com.
+// WebCrawlerAPIProvider supports fetch and crawl via webcrawlerapi.com.
 // Docs: https://webcrawlerapi.com/docs
 type WebCrawlerAPIProvider struct {
 	*httpClient
@@ -25,13 +25,13 @@ const wcaBaseURL = "https://api.webcrawlerapi.com"
 
 // ---- request / response types ----
 
-type wcaScrapeRequest struct {
+type wcaFetchRequest struct {
 	URL             string   `json:"url"`
 	OutputFormats   []string `json:"output_formats"`
 	MainContentOnly bool     `json:"main_content_only,omitempty"`
 }
 
-type wcaScrapeResponse struct {
+type wcaFetchResponse struct {
 	URL         string `json:"url"`
 	Markdown    string `json:"markdown"`
 	HTML        string `json:"html"`
@@ -51,20 +51,20 @@ type wcaCrawlStartResponse struct {
 
 type wcaCrawlStatusResponse struct {
 	Status string              `json:"status"`
-	Pages  []wcaScrapeResponse `json:"pages"`
+	Pages  []wcaFetchResponse `json:"pages"`
 }
 
-// ---- Scrape ----
+// ---- Fetch ----
 
-func (p *WebCrawlerAPIProvider) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
-	body := wcaScrapeRequest{
+func (p *WebCrawlerAPIProvider) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
+	body := wcaFetchRequest{
 		URL:             url,
 		OutputFormats:   []string{"markdown"},
 		MainContentOnly: true,
 	}
 
-	var resp wcaScrapeResponse
-	if err := p.post(ctx, "scrape", wcaBaseURL+"/v2/scrape", &body, &resp); err != nil {
+	var resp wcaFetchResponse
+	if err := p.post(ctx, "fetch", wcaBaseURL+"/v2/scrape", &body, &resp); err != nil {
 		return nil, err
 	}
 
@@ -73,7 +73,7 @@ func (p *WebCrawlerAPIProvider) Scrape(ctx context.Context, url string, opts con
 		content = resp.CleanedText
 	}
 
-	return &config.ScrapeResult{
+	return &config.FetchResult{
 		URL:     url,
 		Content: content,
 		Format:  string(opts.OutputFormat),
@@ -144,6 +144,6 @@ func (p *WebCrawlerAPIProvider) Crawl(ctx context.Context, url string) (*config.
 }
 
 var (
-	_ ScrapeProvider = (*WebCrawlerAPIProvider)(nil)
+	_ FetchProvider = (*WebCrawlerAPIProvider)(nil)
 	_ CrawlProvider  = (*WebCrawlerAPIProvider)(nil)
 )

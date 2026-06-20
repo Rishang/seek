@@ -17,7 +17,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// serveCmd exposes search/scrape/crawl over a small JSON HTTP API. net/http
+// serveCmd exposes search/fetch/crawl over a small JSON HTTP API. net/http
 // serves every request in its own goroutine, so the server is concurrent by
 // default; the operation runners only read the shared factory, so concurrent
 // requests are safe.
@@ -26,10 +26,10 @@ func serveCmd() *cli.Command {
 		Name:      "serve",
 		Usage:     "Run seek as an HTTP API",
 		UsageText: "seek serve [--addr host:port] [--token TOKEN]",
-		Description: "Expose search, scrape, and crawl over HTTP as JSON. Listens on\n" +
+		Description: "Expose search, fetch, and crawl over HTTP as JSON. Listens on\n" +
 			"127.0.0.1:8787 by default.\n\n" +
 			"  POST /search  {\"query\":\"...\",\"provider\":\"auto\",\"range\":7}\n" +
-			"  POST /scrape  {\"url\":\"https://...\",\"format\":\"markdown\"}\n" +
+			"  POST /fetch  {\"url\":\"https://...\",\"format\":\"markdown\"}\n" +
 			"  POST /crawl   {\"url\":\"https://...\"}\n" +
 			"  GET  /healthz\n\n" +
 			"Auth: set --token (or SEEK_SERVE_TOKEN) to require `Authorization: Bearer\n" +
@@ -86,7 +86,7 @@ func runServe(ctx context.Context, addr, token string) error {
 func serveMux(token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /search", auth(token, handleSearch))
-	mux.HandleFunc("POST /scrape", auth(token, handleScrape))
+	mux.HandleFunc("POST /fetch", auth(token, handleFetch))
 	mux.HandleFunc("POST /crawl", auth(token, handleCrawl))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "ok")
@@ -152,14 +152,14 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
-type scrapeRequest struct {
+type fetchRequest struct {
 	URL      string `json:"url"`
 	Provider string `json:"provider,omitempty"`
 	Format   string `json:"format,omitempty"`
 }
 
-func handleScrape(w http.ResponseWriter, r *http.Request) {
-	var req scrapeRequest
+func handleFetch(w http.ResponseWriter, r *http.Request) {
+	var req fetchRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
@@ -167,7 +167,7 @@ func handleScrape(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "url is required")
 		return
 	}
-	result, err := opScrape(r.Context(), req.Provider, req.URL, req.Format)
+	result, err := opFetch(r.Context(), req.Provider, req.URL, req.Format)
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return

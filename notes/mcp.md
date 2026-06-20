@@ -1,7 +1,7 @@
 # `seek mcp` — MCP server (stdio)
 
 `seek mcp` speaks the Model Context Protocol over stdio so MCP-capable agents
-can call seek's search/scrape/crawl tools with the same provider factory and
+can call seek's search/fetch/crawl tools with the same provider factory and
 `auto` failover the CLI uses.
 
 ## Transport
@@ -17,7 +17,7 @@ goes to stderr (package `logx`), so it never corrupts the stream.
 |-----------------------------|-----------|
 | `initialize`                | Returns `protocolVersion` (echoes the client's when given, else `2025-06-18`), `capabilities.tools`, and `serverInfo`. |
 | `ping`                      | Returns `{}`. |
-| `tools/list`                | Lists the `search`, `scrape`, `crawl` tools with JSON-Schema `inputSchema`. |
+| `tools/list`                | Lists the `search`, `fetch`, `crawl` tools with JSON-Schema `inputSchema`. |
 | `tools/call`                | Dispatches to the op runners (`ops.go`). |
 | notifications (no `id`)     | Handled silently, no response (e.g. `notifications/initialized`). |
 | unknown method (with `id`)  | JSON-RPC error `-32601`. |
@@ -27,11 +27,11 @@ goes to stderr (package `logx`), so it never corrupts the stream.
 
 - `search` — args `{query (required), provider?, range?, start?, end?}` → ranked
   results as JSON text.
-- `scrape` — args `{url (required), provider?, format?}` → page content text.
+- `fetch` — args `{url (required), provider?, format?}` → page content text.
 - `crawl`  — args `{url (required), provider?}` → crawl result as JSON text.
 
 The argument structs are the *same* types the HTTP server decodes
-(`searchRequest`/`scrapeRequest`/`crawlRequest`), so the two surfaces never
+(`searchRequest`/`fetchRequest`/`crawlRequest`), so the two surfaces never
 drift.
 
 ### Error convention
@@ -44,7 +44,7 @@ per MCP convention — so the model can see and react to the failure.
 ## Concurrency
 
 The reader loop is sequential (one stdin), but each request is dispatched in its
-own goroutine, so a slow scrape never blocks other in-flight calls. Writes to
+own goroutine, so a slow fetch never blocks other in-flight calls. Writes to
 stdout are serialized by `mcpConn`'s mutex; responses may arrive out of order
 (each carries its request `id`, which JSON-RPC allows). On EOF the loop waits
 for outstanding goroutines (`sync.WaitGroup`) before returning.

@@ -22,7 +22,7 @@ const readmeURL = "https://github.com/rishang/seek#readme"
 // and the init flag validation.
 var (
 	searchProviders = []string{"firecrawl", "tavily", "spider.cloud", "brave", "exa"}
-	scrapeProviders = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi", "lightpanda", "exa"}
+	fetchProviders = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi", "lightpanda", "exa"}
 	crawlProviders  = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi"}
 )
 
@@ -42,7 +42,7 @@ func configCmd() *cli.Command {
 		Description: "Configure seek. With no subcommand this runs `init`.\n\n" +
 			"  seek config init    Create or edit config and provider keys\n" +
 			"  seek config view    Show the effective configuration\n\n" +
-			"search and scrape default to `auto`: providers are tried in priority\n" +
+			"search and fetch default to `auto`: providers are tried in priority\n" +
 			"order until one returns a result. Set a top-level `providers.priority`\n" +
 			"list in config.yaml to reorder (index 0 = highest); membership comes\n" +
 			"from configured keys.\n\n" +
@@ -100,7 +100,7 @@ func printEffectiveConfig(c config.Config, path string) {
 	fmt.Println()
 	fmt.Println("Effective configuration:")
 	printOp("search", c.Search, false, false)
-	printOp("scrape", c.Scrape, true, true)
+	printOp("fetch", c.Fetch, true, true)
 	printOp("crawl", c.Crawl, true, false)
 
 	creds, _ := config.LoadProviders(providersPath())
@@ -179,11 +179,11 @@ func configInitCmd() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "path", Usage: "Config file path (default SEEK_CONFIG or ~/.seek/config.yaml)"},
 			&cli.StringFlag{Name: "search", Usage: "Search provider"},
-			&cli.StringFlag{Name: "scrape", Usage: "Scrape provider"},
+			&cli.StringFlag{Name: "fetch", Usage: "Fetch provider"},
 			&cli.StringFlag{Name: "crawl", Usage: "Crawl provider"},
-			&cli.StringFlag{Name: "format", Usage: "Scrape output format: markdown, html, json"},
-			&cli.IntFlag{Name: "ttl", Usage: "Cache TTL in days (scrape & crawl)"},
-			&cli.BoolFlag{Name: "cache", Value: true, Usage: "Enable scrape/crawl caching (use --cache=false to disable)"},
+			&cli.StringFlag{Name: "format", Usage: "Fetch output format: markdown, html, json"},
+			&cli.IntFlag{Name: "ttl", Usage: "Cache TTL in days (fetch & crawl)"},
+			&cli.BoolFlag{Name: "cache", Value: true, Usage: "Enable fetch/crawl caching (use --cache=false to disable)"},
 			&cli.StringFlag{Name: "store", Usage: "Cache backend (sqlite)"},
 			&cli.StringSliceFlag{Name: "key", Usage: "Provider API key as name=value (repeatable)"},
 			&cli.StringSliceFlag{Name: "host", Usage: "Provider host base URL as name=url (repeatable; OSS providers)"},
@@ -194,7 +194,7 @@ func configInitCmd() *cli.Command {
 }
 
 // initValueFlags are the flags that, when set, switch init to non-interactive.
-var initValueFlags = []string{"search", "scrape", "crawl", "format", "ttl", "cache", "store", "key", "host"}
+var initValueFlags = []string{"search", "fetch", "crawl", "format", "ttl", "cache", "store", "key", "host"}
 
 func anyInitFlagSet(cmd *cli.Command) bool {
 	for _, name := range initValueFlags {
@@ -339,10 +339,10 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 	// plus "auto". Static, so each select sizes to its own option count — an
 	// OptionsFunc would pin every select to a tall fixed-height viewport and
 	// leave large blank gaps. (On a first-time run nothing is configured yet, so
-	// search/scrape offer just "auto", which is the right default anyway.)
+	// search/fetch offer just "auto", which is the right default anyway.)
 	configured := configuredNames(creds)
 	searchOpts := append([]string{"auto"}, filterConfigured(searchProviders, configured)...)
-	scrapeOpts := append([]string{"auto"}, filterConfigured(scrapeProviders, configured)...)
+	fetchOpts := append([]string{"auto"}, filterConfigured(fetchProviders, configured)...)
 	crawlOpts := filterConfigured(crawlProviders, configured)
 	if len(crawlOpts) == 0 {
 		crawlOpts = crawlProviders // nothing configured supports crawl; offer the full list
@@ -350,12 +350,12 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 
 	// Stage-3 bindings, clamped to the option lists above.
 	searchP := pickDefault(orValue(c.Search.Provider, "auto"), searchOpts, "auto")
-	scrapeP := pickDefault(orValue(c.Scrape.Provider, "auto"), scrapeOpts, "auto")
+	fetchP := pickDefault(orValue(c.Fetch.Provider, "auto"), fetchOpts, "auto")
 	crawlP := pickDefault(orValue(c.Crawl.Provider, crawlOpts[0]), crawlOpts, crawlOpts[0])
-	format := orValue(string(c.Scrape.Options.OutputFormat), "markdown")
-	scrapeCache := c.Scrape.Cache.IsEnabled()
+	format := orValue(string(c.Fetch.Options.OutputFormat), "markdown")
+	fetchCache := c.Fetch.Cache.IsEnabled()
 	crawlCache := c.Crawl.Cache.IsEnabled()
-	ttlDays := strconv.Itoa(effectiveTTLDays(c.Scrape.Cache))
+	ttlDays := strconv.Itoa(effectiveTTLDays(c.Fetch.Cache))
 	confirm := true
 
 	// Stage 1: which providers to configure.
@@ -392,15 +392,15 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 		huh.NewGroup(
 			huh.NewSelect[string]().Title("Search provider").
 				Options(huh.NewOptions(searchOpts...)...).Value(&searchP),
-			huh.NewSelect[string]().Title("Scrape provider").
-				Options(huh.NewOptions(scrapeOpts...)...).Value(&scrapeP),
-			huh.NewSelect[string]().Title("Scrape output format").
+			huh.NewSelect[string]().Title("Fetch provider").
+				Options(huh.NewOptions(fetchOpts...)...).Value(&fetchP),
+			huh.NewSelect[string]().Title("Fetch output format").
 				Options(huh.NewOptions("markdown", "html", "json")...).Value(&format),
 			huh.NewSelect[string]().Title("Crawl provider").
 				Options(huh.NewOptions(crawlOpts...)...).Value(&crawlP),
 		),
 		huh.NewGroup(
-			huh.NewConfirm().Title("Cache scrape results?").Value(&scrapeCache),
+			huh.NewConfirm().Title("Cache fetch results?").Value(&fetchCache),
 			huh.NewConfirm().Title("Cache crawl results?").Value(&crawlCache),
 			huh.NewInput().Title("Cache TTL (days)").Value(&ttlDays).
 				Validate(func(s string) error {
@@ -446,13 +446,13 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 	// Write back settings. Each value was chosen from a static option list, so no
 	// post-hoc clamping is needed.
 	c.Search.Provider = searchP
-	c.Scrape.Provider = scrapeP
+	c.Fetch.Provider = fetchP
 	c.Crawl.Provider = crawlP
-	c.Scrape.Options.OutputFormat = parseFormat(format)
-	setCacheEnabled(&c.Scrape.Cache, scrapeCache)
+	c.Fetch.Options.OutputFormat = parseFormat(format)
+	setCacheEnabled(&c.Fetch.Cache, fetchCache)
 	setCacheEnabled(&c.Crawl.Cache, crawlCache)
 	if n, err := strconv.Atoi(strings.TrimSpace(ttlDays)); err == nil && n > 0 {
-		c.Scrape.Cache.TTLSecs = n * 86400
+		c.Fetch.Cache.TTLSecs = n * 86400
 		c.Crawl.Cache.TTLSecs = n * 86400
 	}
 	return true, nil
@@ -475,12 +475,12 @@ func applyInitFlags(cmd *cli.Command, c *config.Config, creds map[string]config.
 		}
 		c.Search.Provider = v
 	}
-	if cmd.IsSet("scrape") {
-		v := cmd.String("scrape")
-		if err := validateProvider("scrape", v, append([]string{"auto"}, scrapeProviders...)); err != nil {
+	if cmd.IsSet("fetch") {
+		v := cmd.String("fetch")
+		if err := validateProvider("fetch", v, append([]string{"auto"}, fetchProviders...)); err != nil {
 			return err
 		}
-		c.Scrape.Provider = v
+		c.Fetch.Provider = v
 	}
 	if cmd.IsSet("crawl") {
 		v := cmd.String("crawl")
@@ -490,19 +490,19 @@ func applyInitFlags(cmd *cli.Command, c *config.Config, creds map[string]config.
 		c.Crawl.Provider = v
 	}
 	if cmd.IsSet("format") {
-		c.Scrape.Options.OutputFormat = parseFormat(cmd.String("format"))
+		c.Fetch.Options.OutputFormat = parseFormat(cmd.String("format"))
 	}
 	if cmd.IsSet("ttl") {
 		secs := int(cmd.Int("ttl")) * 86400
-		c.Scrape.Cache.TTLSecs = secs
+		c.Fetch.Cache.TTLSecs = secs
 		c.Crawl.Cache.TTLSecs = secs
 	}
 	if cmd.IsSet("cache") {
-		setCacheEnabled(&c.Scrape.Cache, cmd.Bool("cache"))
+		setCacheEnabled(&c.Fetch.Cache, cmd.Bool("cache"))
 		setCacheEnabled(&c.Crawl.Cache, cmd.Bool("cache"))
 	}
 	if cmd.IsSet("store") {
-		c.Scrape.Cache.Store = cmd.String("store")
+		c.Fetch.Cache.Store = cmd.String("store")
 		c.Crawl.Cache.Store = cmd.String("store")
 	}
 	for _, kv := range cmd.StringSlice("key") {
