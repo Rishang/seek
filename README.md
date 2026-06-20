@@ -58,10 +58,17 @@ The agent never knows. It called `seek search`. It got an answer. It kept workin
 
 ## ⚡ Quick Start
 
-**Step 1 — Install seek** (one time, done by you)
+**Step 1 — Install seek** (one time, choose one)
 
 ```sh
+# Install script — Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/install.sh | sh
+
+# install-release (ir)
+ir get https://github.com/Rishang/seek
+
+# mise
+mise use -g github:Rishang/seek
 ```
 
 **Step 2 — Add your provider keys**
@@ -540,8 +547,11 @@ curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/install.sh | sh
 curl -fsSL .../install.sh | SEEK_VERSION=v0.1.0 SEEK_BIN_DIR=~/.local/bin sh
 
 # mise
-mise use -g ubi:Rishang/seek          # latest
-mise use -g ubi:Rishang/seek@0.1.0    # pinned
+mise use -g github:Rishang/seek          # latest
+mise use -g github:Rishang/seek@0.1.0    # pinned
+
+# install-release (ir)
+ir get https://github.com/Rishang/seek
 
 # ubi
 ubi --project Rishang/seek --in ~/.local/bin
