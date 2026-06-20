@@ -34,6 +34,8 @@ func providerFlag(usage string) *cli.StringFlag {
 func main() {
 	cfg = loadConfig()
 	factory = loadProviders()
+	factory.SetAutoChain("search", autoCandidates("search", cfg.Search.Priority))
+	factory.SetAutoChain("scrape", autoCandidates("scrape", cfg.Scrape.Priority))
 
 	store, err := setupCache()
 	if err != nil {
@@ -78,6 +80,49 @@ func providerFor(cmd *cli.Command, fallback string) string {
 	return fallback
 }
 
+// autoCandidates builds the ordered candidate list the "auto" provider draws
+// from for an operation: the optional config priority hint first, then the
+// built-in default ranking, then the providerEnv order as a safety net. Names
+// are de-duplicated (first occurrence wins); empties and "auto" are dropped.
+// The factory filters this list to configured + capable providers.
+func autoCandidates(op string, priority []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(names []string) {
+		for _, n := range names {
+			if n == "" || n == "auto" || seen[n] {
+				continue
+			}
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	add(priority)
+	add(defaultAutoChains[op])
+	env := make([]string, len(providerEnv))
+	for i, p := range providerEnv {
+		env[i] = p.Name
+	}
+	add(env)
+	return out
+}
+
+// logAutoAttempts surfaces auto-provider failover: a Warn per failed provider
+// and a Debug for the one that served. No-op when p is not an auto provider.
+func logAutoAttempts(p any) {
+	ar, ok := p.(provider.AutoReporter)
+	if !ok {
+		return
+	}
+	for _, a := range ar.Attempts() {
+		if a.Err != nil {
+			logx.Warn("auto: %s failed: %v", a.Provider, a.Err)
+		} else {
+			logx.Debug("auto: served by %s", a.Provider)
+		}
+	}
+}
+
 func searchCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "search",
@@ -114,6 +159,7 @@ func searchCmd() *cli.Command {
 				}
 			}
 			results, err := sp.Search(ctx, query, opts)
+			logAutoAttempts(sp)
 			if err != nil {
 				return err
 			}
@@ -208,6 +254,7 @@ func scrapeCmd() *cli.Command {
 				return err
 			}
 			result, err := sp.Scrape(ctx, url, config.ScrapeOptions{OutputFormat: outFormat})
+			logAutoAttempts(sp)
 			if err != nil {
 				return err
 			}

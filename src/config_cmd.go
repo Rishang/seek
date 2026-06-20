@@ -26,6 +26,15 @@ var (
 	crawlProviders  = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi"}
 )
 
+// defaultAutoChains is the built-in try-order ranking for the "auto" provider,
+// per operation. It ranks the providers the user has actually configured — it
+// does not decide membership. Must stay a subset of the per-capability lists
+// above. Not written to config.yaml by `seek config init`.
+var defaultAutoChains = map[string][]string{
+	"search": {"exa", "brave", "tavily", "firecrawl", "spider.cloud"},
+	"scrape": {"firecrawl", "spider.cloud", "lightpanda", "tavily", "exa", "webcrawlerapi"},
+}
+
 // providerHostDefaults lists the self-hostable (OSS) providers and the base URL
 // of their managed cloud. init prompts for a host for these, defaulting to the
 // cloud URL.
