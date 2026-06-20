@@ -28,7 +28,7 @@ type autoSearchEntry struct {
 
 type autoSearch struct {
 	chain    []autoSearchEntry
-	attempts []Attempt
+	attempts []Attempt // ponytail: mutated per call; single-shot per process, not safe for concurrent reuse
 }
 
 func newAutoSearch(chain []autoSearchEntry) *autoSearch { return &autoSearch{chain: chain} }
@@ -76,7 +76,7 @@ type autoScrapeEntry struct {
 
 type autoScrape struct {
 	chain    []autoScrapeEntry
-	attempts []Attempt
+	attempts []Attempt // ponytail: mutated per call; single-shot per process, not safe for concurrent reuse
 }
 
 func newAutoScrape(chain []autoScrapeEntry) *autoScrape { return &autoScrape{chain: chain} }

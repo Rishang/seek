@@ -26,6 +26,14 @@ var noCacheFlag = &cli.BoolFlag{
 	Usage: "Bypass the result cache for this request",
 }
 
+// verboseFlag turns on debug logging for the whole invocation. Persistent
+// (Local defaults to false in cli/v3), so it works before any subcommand.
+var verboseFlag = &cli.BoolFlag{
+	Name:    "verbose",
+	Aliases: []string{"v"},
+	Usage:   "Print debug logs to stderr",
+}
+
 // providerFlag is reused (with operation-specific usage) by every command.
 func providerFlag(usage string) *cli.StringFlag {
 	return &cli.StringFlag{Name: "provider", Aliases: []string{"p"}, Usage: usage}
@@ -49,6 +57,13 @@ func main() {
 		Name:        "seek",
 		Usage:       "The OpenRouter for web search",
 		Description: "Run web search, scrape, and crawl across pluggable providers.\n\nDocs: " + readmeURL,
+		Flags:       []cli.Flag{verboseFlag},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			if cmd.Bool("verbose") {
+				logx.SetLevel(logx.LevelDebug)
+			}
+			return ctx, nil
+		},
 		Commands: []*cli.Command{
 			searchCmd(),
 			scrapeCmd(),
@@ -82,9 +97,10 @@ func providerFor(cmd *cli.Command, fallback string) string {
 
 // autoCandidates builds the ordered candidate list the "auto" provider draws
 // from for an operation: the optional config priority hint first, then the
-// built-in default ranking, then the providerEnv order as a safety net. Names
-// are de-duplicated (first occurrence wins); empties and "auto" are dropped.
-// The factory filters this list to configured + capable providers.
+// built-in default ranking. Names are de-duplicated (first occurrence wins);
+// empties and "auto" are dropped. The factory filters this list to configured
+// + capable providers. defaultAutoChains is the full per-capability set (see
+// its doc), so no further fallback is needed.
 func autoCandidates(op string, priority []string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -99,11 +115,6 @@ func autoCandidates(op string, priority []string) []string {
 	}
 	add(priority)
 	add(defaultAutoChains[op])
-	env := make([]string, len(providerEnv))
-	for i, p := range providerEnv {
-		env[i] = p.Name
-	}
-	add(env)
 	return out
 }
 
