@@ -35,6 +35,16 @@ func (c cachingScrape) Scrape(ctx context.Context, url string, opts config.Scrap
 	return result, nil
 }
 
+// Attempts forwards the wrapped provider's auto attempts (nil when the wrapped
+// provider is not an auto meta-provider), so the CLI can report failover even
+// through the cache decorator.
+func (c cachingScrape) Attempts() []Attempt {
+	if ar, ok := c.ScrapeProvider.(AutoReporter); ok {
+		return ar.Attempts()
+	}
+	return nil
+}
+
 type cachingCrawl struct {
 	CrawlProvider
 	store    cache.Store

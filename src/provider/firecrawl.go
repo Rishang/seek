@@ -46,8 +46,14 @@ type fcSearchRequest struct {
 }
 
 type fcSearchResponse struct {
-	Success bool           `json:"success"`
-	Data    []fcSearchItem `json:"data"`
+	Success bool         `json:"success"`
+	Data    fcSearchData `json:"data"`
+}
+
+// fcSearchData groups results by source (v2 returns an object, not a flat array).
+// We only request "web", so the other sources stay empty.
+type fcSearchData struct {
+	Web []fcSearchItem `json:"web"`
 }
 
 type fcSearchItem struct {
@@ -124,8 +130,8 @@ func (p *FirecrawlProvider) Search(ctx context.Context, query string, opts confi
 		return nil, err
 	}
 
-	results := make([]config.SearchResult, len(resp.Data))
-	for i, item := range resp.Data {
+	results := make([]config.SearchResult, len(resp.Data.Web))
+	for i, item := range resp.Data.Web {
 		results[i] = config.SearchResult{
 			Title:   item.Title,
 			URL:     item.URL,

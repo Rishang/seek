@@ -33,3 +33,16 @@ type CrawlProvider interface {
 type Provider interface {
 	Name() string
 }
+
+// Attempt records one provider tried by an auto chain. Err is nil for the
+// provider that served the result.
+type Attempt struct {
+	Provider string
+	Err      error
+}
+
+// AutoReporter is implemented by the auto meta-provider so the CLI can report
+// which provider served a request and why earlier ones failed.
+type AutoReporter interface {
+	Attempts() []Attempt
+}

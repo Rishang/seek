@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -23,11 +24,91 @@ var (
 // -ldflags "-X main.version=<tag>". Defaults to "dev" for local builds.
 var version = "dev"
 
+// repoSlug is the owner/repo used for the latest-release check. GitHub's API
+// is case-insensitive on the owner; this matches install.sh and the README.
+const repoSlug = "Rishang/seek"
+
+// versionCmd prints the build version (set from the release tag via
+// Taskfile build:release / .github/workflows/release.yml). Mirrors the
+// --version flag as a subcommand: `seek version`. It also makes a best-effort
+// GitHub call to compare against the latest release.
+func versionCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "version",
+		Usage:     "Print the seek version and check for updates",
+		UsageText: "seek version",
+		Action: func(ctx context.Context, _ *cli.Command) error {
+			fmt.Printf("seek version %s\n", version)
+			latest, ok := latestRelease(ctx)
+			if line := versionStatus(version, latest, ok); line != "" {
+				fmt.Println(line)
+			}
+			return nil
+		},
+	}
+}
+
+// versionStatus is the human update line comparing the running version to the
+// latest release. It returns "" when the check was unavailable, so a failed
+// network call simply prints nothing extra.
+func versionStatus(current, latest string, ok bool) string {
+	switch {
+	case !ok:
+		return ""
+	case current == latest:
+		return fmt.Sprintf("your version %s is the latest version", current)
+	default:
+		return fmt.Sprintf("the latest version is %s, yours is %s — please update", latest, current)
+	}
+}
+
+// latestRelease fetches the newest published release tag from GitHub. It is
+// best-effort: any failure (offline, rate-limited, timeout, bad status)
+// returns ok=false with no error, so `seek version` never fails on the network.
+// ponytail: 3s ceiling; bump it or add caching if the check ever feels slow.
+func latestRelease(ctx context.Context) (string, bool) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	url := "https://api.github.com/repos/" + repoSlug + "/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", false
+	}
+	req.Header.Set("User-Agent", "seek-cli") // GitHub rejects requests without one
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", false
+	}
+
+	var rel struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil || rel.TagName == "" {
+		return "", false
+	}
+	return rel.TagName, true
+}
+
 // noCacheFlag bypasses the result cache for a single request. Shared across the
 // search, scrape, and crawl commands.
 var noCacheFlag = &cli.BoolFlag{
 	Name:  "no-cache",
 	Usage: "Bypass the result cache for this request",
+}
+
+// verboseFlag turns on debug logging for the whole invocation. Persistent
+// (Local defaults to false in cli/v3), so it works before any subcommand.
+var verboseFlag = &cli.BoolFlag{
+	Name:    "verbose",
+	Aliases: []string{"v"},
+	Usage:   "Print debug logs to stderr",
 }
 
 // providerFlag is reused (with operation-specific usage) by every command.
@@ -38,6 +119,8 @@ func providerFlag(usage string) *cli.StringFlag {
 func main() {
 	cfg = loadConfig()
 	factory = loadProviders()
+	factory.SetAutoChain("search", autoCandidates("search", cfg.Priority))
+	factory.SetAutoChain("scrape", autoCandidates("scrape", cfg.Priority))
 
 	store, err := setupCache()
 	if err != nil {
@@ -47,16 +130,32 @@ func main() {
 		defer store.Close()
 	}
 
+	// The default cli version flag aliases -v, which we already use for
+	// --verbose. cli/v3 silently drops the version flag on that collision, so
+	// expose it under --version only — otherwise the -ldflags build version
+	// (see Taskfile build:release) would be unreachable.
+	cli.VersionFlag = &cli.BoolFlag{Name: "version", Usage: "Print the seek version"}
+
 	cmd := &cli.Command{
 		Name:        "seek",
 		Version:     version,
 		Usage:       "The OpenRouter for web search",
 		Description: "Run web search, scrape, and crawl across pluggable providers.\n\nDocs: " + readmeURL,
+		Flags:       []cli.Flag{verboseFlag},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			if cmd.Bool("verbose") {
+				logx.SetLevel(logx.LevelDebug)
+			}
+			return ctx, nil
+		},
 		Commands: []*cli.Command{
 			searchCmd(),
 			scrapeCmd(),
 			crawlCmd(),
+			serveCmd(),
+			mcpCmd(),
 			configCmd(),
+			versionCmd(),
 		},
 	}
 
@@ -83,13 +182,75 @@ func providerFor(cmd *cli.Command, fallback string) string {
 	return fallback
 }
 
+// autoCandidates returns the providers the "auto" meta-provider tries for op,
+// in priority order. priority is the global providers.priority list (a
+// config.yaml override or the built-in default); it is filtered to providers
+// capable of op. Any capable provider missing from the list is appended in
+// capability order, so a typo or omission never silently drops a usable
+// provider. Empties and "auto" are skipped; the factory further narrows the
+// result to providers that actually have credentials.
+func autoCandidates(op string, priority []string) []string {
+	capable := capabilityProviders(op)
+	isCapable := make(map[string]bool, len(capable))
+	for _, n := range capable {
+		isCapable[n] = true
+	}
+
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range priority {
+		if n == "" || n == "auto" || seen[n] || !isCapable[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	for _, n := range capable { // safety net: capable providers not listed in priority
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// capabilityProviders returns the providers that support op, in their canonical
+// order (used as the priority fallback ordering).
+func capabilityProviders(op string) []string {
+	switch op {
+	case "search":
+		return searchProviders
+	case "scrape":
+		return scrapeProviders
+	case "crawl":
+		return crawlProviders
+	}
+	return nil
+}
+
+// logAutoAttempts surfaces auto-provider failover: a Warn per failed provider
+// and a Debug for the one that served. No-op when p is not an auto provider.
+func logAutoAttempts(p any) {
+	ar, ok := p.(provider.AutoReporter)
+	if !ok {
+		return
+	}
+	for _, a := range ar.Attempts() {
+		if a.Err != nil {
+			logx.Warn("auto: %s failed: %v", a.Provider, a.Err)
+		} else {
+			logx.Debug("auto: served by %s", a.Provider)
+		}
+	}
+}
+
 func searchCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "search",
 		Usage:     "Run a web search",
 		UsageText: "seek search [-p provider] [--start DD/MM/YYYY] [--end DD/MM/YYYY] [--range N] <query>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: firecrawl, tavily, spider.cloud, brave, exa"),
+			providerFlag("Provider: auto (default), firecrawl, tavily, spider.cloud, brave, exa"),
 			&cli.StringFlag{Name: "start", Usage: "Only results published on/after this date (DD/MM/YYYY)"},
 			&cli.StringFlag{Name: "end", Usage: "Only results published on/before this date (DD/MM/YYYY)"},
 			&cli.IntFlag{Name: "range", Usage: "Only results from the last N days (today back N days)"},
@@ -119,6 +280,7 @@ func searchCmd() *cli.Command {
 				}
 			}
 			results, err := sp.Search(ctx, query, opts)
+			logAutoAttempts(sp)
 			if err != nil {
 				return err
 			}
@@ -139,34 +301,16 @@ func parseDMY(s string) (time.Time, error) {
 // --range flags. --range sets both bounds (today back N days); explicit
 // --start/--end override the corresponding bound.
 func searchOptions(cmd *cli.Command) (config.SearchOptions, error) {
-	var tr config.TimeRange
-
+	rangeDays := 0
 	if cmd.IsSet("range") {
-		n := int(cmd.Int("range"))
-		if n <= 0 {
+		rangeDays = int(cmd.Int("range"))
+		if rangeDays <= 0 {
 			return config.SearchOptions{}, fmt.Errorf("--range must be a positive number of days")
 		}
-		now := time.Now()
-		tr.Start = now.AddDate(0, 0, -n)
-		tr.End = now
 	}
-	if cmd.IsSet("start") {
-		t, err := parseDMY(cmd.String("start"))
-		if err != nil {
-			return config.SearchOptions{}, fmt.Errorf("invalid --start %q: expected DD/MM/YYYY", cmd.String("start"))
-		}
-		tr.Start = t
-	}
-	if cmd.IsSet("end") {
-		t, err := parseDMY(cmd.String("end"))
-		if err != nil {
-			return config.SearchOptions{}, fmt.Errorf("invalid --end %q: expected DD/MM/YYYY", cmd.String("end"))
-		}
-		tr.End = t
-	}
-	if !tr.Start.IsZero() && !tr.End.IsZero() && tr.End.Before(tr.Start) {
-		return config.SearchOptions{}, fmt.Errorf("--end (%s) is before --start (%s)",
-			tr.End.Format(dmyLayout), tr.Start.Format(dmyLayout))
+	tr, err := buildTimeRange(rangeDays, cmd.String("start"), cmd.String("end"))
+	if err != nil {
+		return config.SearchOptions{}, err
 	}
 	if !tr.IsZero() {
 		logx.Debug("search time range: start=%s end=%s",
@@ -188,7 +332,7 @@ func scrapeCmd() *cli.Command {
 		Usage:     "Extract content from a URL",
 		UsageText: "seek scrape [-p provider] [-f format] <url>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda, exa"),
+			providerFlag("Provider: auto (default), firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda, exa"),
 			&cli.StringFlag{
 				Name:    "format",
 				Aliases: []string{"f"},
@@ -213,6 +357,7 @@ func scrapeCmd() *cli.Command {
 				return err
 			}
 			result, err := sp.Scrape(ctx, url, config.ScrapeOptions{OutputFormat: outFormat})
+			logAutoAttempts(sp)
 			if err != nil {
 				return err
 			}
