@@ -32,4 +32,5 @@ go.work.sum
 # .vscode/
 # notes/
 bin/
+dist/
 .idea/

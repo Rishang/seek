@@ -19,6 +19,10 @@ var (
 	cfg     config.Config
 )
 
+// version is the build version, overridden at release time via
+// -ldflags "-X main.version=<tag>". Defaults to "dev" for local builds.
+var version = "dev"
+
 // noCacheFlag bypasses the result cache for a single request. Shared across the
 // search, scrape, and crawl commands.
 var noCacheFlag = &cli.BoolFlag{
@@ -55,6 +59,7 @@ func main() {
 
 	cmd := &cli.Command{
 		Name:        "seek",
+		Version:     version,
 		Usage:       "The OpenRouter for web search",
 		Description: "Run web search, scrape, and crawl across pluggable providers.\n\nDocs: " + readmeURL,
 		Flags:       []cli.Flag{verboseFlag},
@@ -275,6 +280,9 @@ func scrapeCmd() *cli.Command {
 			logAutoAttempts(sp)
 			if err != nil {
 				return err
+			}
+			if result.Cached {
+				logx.Debug("scrape cache hit for %s", url)
 			}
 			// Emit the raw page content in its requested format (markdown by
 			// default); the URL/format envelope would only get in the way.

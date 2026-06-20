@@ -24,7 +24,7 @@ type cachingScrape struct {
 func (c cachingScrape) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
 	key := cache.Key{Op: "scrape", Provider: c.provider, URL: url, Format: string(opts.OutputFormat)}
 	if entry, ok, _ := c.store.Get(ctx, key); ok {
-		return &config.ScrapeResult{URL: url, Content: entry.Content, Format: entry.Format}, nil
+		return &config.ScrapeResult{URL: url, Content: entry.Content, Format: entry.Format, Cached: true}, nil
 	}
 
 	result, err := c.ScrapeProvider.Scrape(ctx, url, opts)

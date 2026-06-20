@@ -7,6 +7,21 @@ tasks:
     cmds:
       - go build -o ../bin/seek .
 
+  build:release:
+    desc: Cross-compile a stripped release binary (pass GOOS, GOARCH; optional VERSION)
+    dir: src
+    requires:
+      vars: [GOOS, GOARCH]
+    vars:
+      EXT: '{{if eq .GOOS "windows"}}.exe{{end}}'
+      OUTPUT: '../dist/seek-{{.GOOS}}-{{.GOARCH}}{{.EXT}}'
+    env:
+      CGO_ENABLED: '0'
+      GOOS: '{{.GOOS}}'
+      GOARCH: '{{.GOARCH}}'
+    cmds:
+      - go build -trimpath -ldflags "-s -w -X main.version={{.VERSION | default "dev"}}" -o "{{.OUTPUT}}" .
+
   run:
     desc: Build and run with args (e.g. task run -- search "query")
     dir: src
