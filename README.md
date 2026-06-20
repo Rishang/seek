@@ -5,7 +5,7 @@
 <h1 align="center">seek</h1>
 
 <p align="center">
-  <em>The OpenRouter for web search. One key dies, the next one answers.</em>
+  <em>The web tool for CLI coding agents. The OpenRouter for web search — one key dies, the next one answers.</em>
 </p>
 
 <p align="center">
@@ -21,15 +21,17 @@
 
 ---
 
-Coding agents running open-source models — OpenCode, pi, Kilo Code, and friends — usually ship without a web tool. They can't pull the current version of a library, a breaking API change, or today's doc page; they answer from stale training data instead.
+**seek is a web tool for CLI coding agents — not for humans.**
 
-seek is that missing tool. One CLI in front of seven search / scrape / crawl providers, with automatic failover so a rate-limited or dead key never stalls the agent mid-task. Drop in the bundled **web-fetch skill** and the agent gets a cheap *search → decide → scrape* loop for up-to-date docs.
+Coding agents running open-source models — OpenCode, pi, Kilo Code, and friends — usually ship without web access. They can't pull the current version of a library, a breaking API change, or today's doc page; they answer from stale training data instead.
 
-It works just as well from your own shell: you run `seek search`; it picks a provider, and when a key rate-limits or 401s it falls through to the next one — without you noticing.
+seek is the missing tool you hand the agent. One command in front of seven search / scrape / crawl providers, with automatic failover so a rate-limited or dead key never stalls the agent mid-task. You install it and point your agent at the bundled **web-fetch skill**; the agent does the rest — a cheap *search → decide → scrape* loop for up-to-date docs, run entirely by the model, not by you.
+
+The human's job is one-time setup (`seek config init`, drop in the skill). After that every `seek` call is made by an agent. That framing drives every design choice below: CSV-first output to save tokens, snippet-before-scrape guards in the skill, invisible failover, and an MCP/HTTP surface so *any* agent — including the one reading this — can call it.
 
 ## For coding agents
 
-This is where seek earns its keep. Most open-source-model agents have no built-in web access; seek gives them one, and ships a skill that teaches the cheap path instead of burning tokens.
+This is the whole point. Most open-source-model agents have no built-in web access; seek gives them one, and ships a skill that teaches the cheap path instead of burning tokens.
 
 [`skills/SKILL.md`](skills/SKILL.md) is a `web-fetch` skill. Put `seek` on the agent's `PATH` and point the agent at the skill (copy or symlink it into the agent's skills directory), and it learns the loop:
 
@@ -41,19 +43,17 @@ The skill encodes hard token-budget guards — snippets before scrapes, one page
 
 The CLI skill is the MVP for terminal coding agents. seek also runs as a server for everything else: [`seek mcp`](#seek-mcp--mcp-server) speaks the Model Context Protocol over stdio so any MCP-capable agent can call the same search/scrape/crawl tools, and [`seek serve`](#seek-serve--http-api) exposes them as an HTTP+JSON API.
 
-## Before / after
+## Why not just give the agent a provider SDK?
 
-You want a web search with a fallback when your primary provider is down.
+Because keys rate-limit and die mid-task, and one SDK is one point of failure. Wiring a fallback yourself means two SDKs, two auth flows, a try/catch, and a normalization layer to make their responses line up — then teaching the agent all of it.
 
-Without seek: two SDKs, two auth flows, a try/catch, and a normalization layer to make their responses line up.
-
-With seek:
+With seek the agent learns one command:
 
 ```bash
 seek search "rust async runtimes"
 ```
 
-`auto` tries your configured providers in priority order until one returns a result.
+`auto` tries the configured providers in priority order until one returns a result. The agent never sees the 401, the rate-limit, or the dead key — it just gets an answer and keeps working.
 
 ## How it works
 
@@ -72,9 +72,9 @@ seek search "rust async runtimes"
 
 Index `0` in `providers.priority` is highest priority. Membership comes from which keys you've configured; a provider with no key is simply skipped. `crawl` defaults to `firecrawl` (no failover).
 
-## Install
+## Install (one-time, by you)
 
-seek builds from source. You need Go 1.25+ (and optionally [Task](https://taskfile.dev) for the shortcuts).
+This is the human part. seek builds from source — you need Go 1.25+ (and optionally [Task](https://taskfile.dev) for the shortcuts).
 
 ```bash
 git clone https://github.com/rishang/seek
@@ -83,24 +83,25 @@ task build            # or: cd src && go build -o ../bin/seek .
 ./bin/seek --help
 ```
 
-Put `bin/seek` on your `PATH` and you're done.
+Put `bin/seek` on the agent's `PATH` and you're done.
 
-## Quickstart
+## Setup & wiring the agent
 
 ```bash
-# 1. Configure providers and keys (interactive form)
+# 1. Configure providers and keys (interactive form) — one time
 seek config init
 
-# 2. Search, scrape, crawl
+# 2. Hand the agent the skill so it learns the cheap loop
+mkdir -p <your-agent>/skills/web-fetch
+cp skills/SKILL.md <your-agent>/skills/web-fetch/   # or symlink it
+
+# 3. (Optional) sanity-check the commands the agent will run
 seek search "best go web frameworks 2026"
 seek scrape https://go.dev -f markdown
-seek crawl https://go.dev/doc -o json
-
-# 3. See what's configured and which keys are set
-seek config view
+seek config view                                  # what's configured, which keys are set
 ```
 
-Non-interactive setup works too:
+After this, you stop typing `seek` — the agent runs it. Non-interactive setup works too, for scripting the install:
 
 ```bash
 seek config init --search auto --key firecrawl=fc-xxx --key tavily=tvly-xxx --yes
