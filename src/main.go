@@ -23,6 +23,21 @@ var (
 // -ldflags "-X main.version=<tag>". Defaults to "dev" for local builds.
 var version = "dev"
 
+// versionCmd prints the build version (set from the release tag via
+// Taskfile build:release / .github/workflows/release.yml). Mirrors the
+// --version flag as a subcommand: `seek version`.
+func versionCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "version",
+		Usage:     "Print the seek version",
+		UsageText: "seek version",
+		Action: func(_ context.Context, _ *cli.Command) error {
+			fmt.Printf("seek version %s\n", version)
+			return nil
+		},
+	}
+}
+
 // noCacheFlag bypasses the result cache for a single request. Shared across the
 // search, scrape, and crawl commands.
 var noCacheFlag = &cli.BoolFlag{
@@ -82,6 +97,7 @@ func main() {
 			serveCmd(),
 			mcpCmd(),
 			configCmd(),
+			versionCmd(),
 		},
 	}
 

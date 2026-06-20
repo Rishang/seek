@@ -177,6 +177,7 @@ seek config init --search auto --key firecrawl=fc-xxx --key tavily=tvly-xxx --ye
 | `seek mcp` | Run an MCP server over stdio so MCP-capable agents can call the same tools. |
 | `seek config init` | Create or edit `config.yaml` and provider keys — interactive form, or pass flags / pipe input for non-interactive mode. |
 | `seek config view` | Show the effective configuration and which API keys are set. |
+| `seek version` | Print the seek version (set from the release tag at build time). |
 
 ### Flags
 
