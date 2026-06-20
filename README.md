@@ -21,9 +21,25 @@
 
 ---
 
-Every web-search provider has its own SDK, its own auth, and its own response shape. You wire up Firecrawl, bolt on Tavily as a backup, write the failover glue, then do it all again for scraping.
+Coding agents running open-source models — OpenCode, pi, Kilo Code, and friends — usually ship without a web tool. They can't pull the current version of a library, a breaking API change, or today's doc page; they answer from stale training data instead.
 
-seek puts one CLI in front of all of them. You run `seek search`; it picks a provider, and when a key rate-limits or 401s it falls through to the next one — without you noticing.
+seek is that missing tool. One CLI in front of seven search / scrape / crawl providers, with automatic failover so a rate-limited or dead key never stalls the agent mid-task. Drop in the bundled **web-fetch skill** and the agent gets a cheap *search → decide → scrape* loop for up-to-date docs.
+
+It works just as well from your own shell: you run `seek search`; it picks a provider, and when a key rate-limits or 401s it falls through to the next one — without you noticing.
+
+## For coding agents
+
+This is where seek earns its keep. Most open-source-model agents have no built-in web access; seek gives them one, and ships a skill that teaches the cheap path instead of burning tokens.
+
+[`skills/SKILL.md`](skills/SKILL.md) is a `web-fetch` skill. Put `seek` on the agent's `PATH` and point the agent at the skill (copy or symlink it into the agent's skills directory), and it learns the loop:
+
+1. `seek search -o csv "<query>"` → read the snippets. The snippet is substantial — often it already *is* the answer, so it stops there.
+2. Only if a detail is missing, `seek scrape "<url>"` the single best result → full markdown.
+3. Stop the moment the objective is met.
+
+The skill encodes hard token-budget guards — snippets before scrapes, one page at a time, pipe large `llms.txt` indexes through `rg`, no `crawl` unless explicitly asked — so research stays cheap. Failover is invisible to the agent: it calls `seek search`, and whichever provider answers first wins.
+
+The CLI skill is the MVP — it targets terminal coding agents today. Next on the roadmap is **`seek mcp`**, an MCP server so any MCP-capable agent can leverage the same search/scrape/crawl loop without shelling out.
 
 ## Before / after
 
