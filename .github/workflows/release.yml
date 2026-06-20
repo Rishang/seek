@@ -38,9 +38,10 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Pure-Go build (modernc.org/sqlite), so CGO_ENABLED=0 cross-compiles
-      # cleanly for every target — see Taskfile build:release.
+      # cleanly for every target — see Taskfile build:release. VERSION is read
+      # from the standard GITHUB_REF_NAME env var (the pushed tag).
       - name: Build
-        run: task build:release GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} VERSION=${{ github.ref_name }}
+        run: task build:release GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }}
 
       - name: Package
         id: package

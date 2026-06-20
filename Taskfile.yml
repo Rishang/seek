@@ -8,19 +8,21 @@ tasks:
       - go build -o ../bin/seek .
 
   build:release:
-    desc: Cross-compile a stripped release binary (pass GOOS, GOARCH; optional VERSION)
+    desc: Cross-compile a stripped release binary (pass GOOS, GOARCH; VERSION from GITHUB_REF_NAME in CI)
     dir: src
     requires:
       vars: [GOOS, GOARCH]
     vars:
       EXT: '{{if eq .GOOS "windows"}}.exe{{end}}'
       OUTPUT: '../dist/seek-{{.GOOS}}-{{.GOARCH}}{{.EXT}}'
+      # Precedence: explicit VERSION > GITHUB_REF_NAME (the tag on a CI tag-push) > dev.
+      VERSION: '{{.VERSION | default .GITHUB_REF_NAME | default "dev"}}'
     env:
       CGO_ENABLED: '0'
       GOOS: '{{.GOOS}}'
       GOARCH: '{{.GOARCH}}'
     cmds:
-      - go build -trimpath -ldflags "-s -w -X main.version={{.VERSION | default "dev"}}" -o "{{.OUTPUT}}" .
+      - go build -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o "{{.OUTPUT}}" .
 
   run:
     desc: Build and run with args (e.g. task run -- search "query")
