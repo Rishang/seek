@@ -32,7 +32,7 @@ func TestRenderSearchCSV(t *testing.T) {
 
 func TestRenderDefaultsToJSON(t *testing.T) {
 	var buf bytes.Buffer
-	if err := renderTo(&buf, "", &config.ScrapeResult{URL: "u", Content: "c", Format: "markdown"}); err != nil {
+	if err := renderTo(&buf, "", &config.FetchResult{URL: "u", Content: "c", Format: "markdown"}); err != nil {
 		t.Fatalf("renderTo: %v", err)
 	}
 	if !strings.Contains(buf.String(), `"content": "c"`) {

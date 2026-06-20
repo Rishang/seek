@@ -8,9 +8,9 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// ExaProvider supports search and scrape via the Exa API.
+// ExaProvider supports search and fetch via the Exa API.
 // Exa is a neural/embeddings search engine that can also return page contents
-// inline. Scrape maps to the /contents endpoint.
+// inline. Fetch maps to the /contents endpoint.
 //
 // Docs: https://exa.ai/docs/reference/search
 type ExaProvider struct {
@@ -102,27 +102,27 @@ func (p *ExaProvider) Search(ctx context.Context, query string, opts config.Sear
 	return results, nil
 }
 
-// ---- Scrape (Exa /contents) ----
+// ---- Fetch (Exa /contents) ----
 
-func (p *ExaProvider) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (p *ExaProvider) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
 	body := exaContentsRequest{
 		URLs: []string{url},
 		Text: &exaText{IncludeHTMLTags: opts.OutputFormat == config.FormatHTML},
 	}
 
 	var resp exaContentsResponse
-	if err := p.post(ctx, "scrape", exaBaseURL+"/contents", &body, &resp); err != nil {
+	if err := p.post(ctx, "fetch", exaBaseURL+"/contents", &body, &resp); err != nil {
 		return nil, err
 	}
 	if len(resp.Results) == 0 {
-		return nil, fmt.Errorf("exa scrape returned no contents for %s", url)
+		return nil, fmt.Errorf("exa fetch returned no contents for %s", url)
 	}
 
 	format := "markdown"
 	if opts.OutputFormat == config.FormatHTML {
 		format = "html"
 	}
-	return &config.ScrapeResult{
+	return &config.FetchResult{
 		URL:     url,
 		Content: resp.Results[0].Text,
 		Format:  format,
@@ -132,5 +132,5 @@ func (p *ExaProvider) Scrape(ctx context.Context, url string, opts config.Scrape
 // Compile-time interface checks.
 var (
 	_ SearchProvider = (*ExaProvider)(nil)
-	_ ScrapeProvider = (*ExaProvider)(nil)
+	_ FetchProvider = (*ExaProvider)(nil)
 )

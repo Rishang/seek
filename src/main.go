@@ -97,7 +97,7 @@ func latestRelease(ctx context.Context) (string, bool) {
 }
 
 // noCacheFlag bypasses the result cache for a single request. Shared across the
-// search, scrape, and crawl commands.
+// search, fetch, and crawl commands.
 var noCacheFlag = &cli.BoolFlag{
 	Name:  "no-cache",
 	Usage: "Bypass the result cache for this request",
@@ -120,7 +120,7 @@ func main() {
 	cfg = loadConfig()
 	factory = loadProviders()
 	factory.SetAutoChain("search", autoCandidates("search", cfg.Priority))
-	factory.SetAutoChain("scrape", autoCandidates("scrape", cfg.Priority))
+	factory.SetAutoChain("fetch", autoCandidates("fetch", cfg.Priority))
 
 	store, err := setupCache()
 	if err != nil {
@@ -140,7 +140,7 @@ func main() {
 		Name:        "seek",
 		Version:     version,
 		Usage:       "The OpenRouter for web search",
-		Description: "Run web search, scrape, and crawl across pluggable providers.\n\nDocs: " + readmeURL,
+		Description: "Run web search, fetch, and crawl across pluggable providers.\n\nDocs: " + readmeURL,
 		Flags:       []cli.Flag{verboseFlag},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			if cmd.Bool("verbose") {
@@ -150,7 +150,7 @@ func main() {
 		},
 		Commands: []*cli.Command{
 			searchCmd(),
-			scrapeCmd(),
+			fetchCmd(),
 			crawlCmd(),
 			serveCmd(),
 			mcpCmd(),
@@ -220,8 +220,8 @@ func capabilityProviders(op string) []string {
 	switch op {
 	case "search":
 		return searchProviders
-	case "scrape":
-		return scrapeProviders
+	case "fetch":
+		return fetchProviders
 	case "crawl":
 		return crawlProviders
 	}
@@ -326,11 +326,11 @@ func fmtDateOrOpen(t time.Time) string {
 	return t.Format(dmyLayout)
 }
 
-func scrapeCmd() *cli.Command {
+func fetchCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "scrape",
-		Usage:     "Extract content from a URL",
-		UsageText: "seek scrape [-p provider] [-f format] <url>",
+		Name:      "fetch",
+		Usage:     "Fetch and extract content from a URL",
+		UsageText: "seek fetch [-p provider] [-f format] <url>",
 		Flags: []cli.Flag{
 			providerFlag("Provider: auto (default), firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda, exa"),
 			&cli.StringFlag{
@@ -347,22 +347,22 @@ func scrapeCmd() *cli.Command {
 			url := cmd.Args().First()
 			applyNoCache(cmd)
 
-			outFormat := cfg.Scrape.Options.OutputFormat
+			outFormat := cfg.Fetch.Options.OutputFormat
 			if cmd.IsSet("format") {
 				outFormat = parseFormat(cmd.String("format"))
 			}
 
-			sp, err := factory.Scrape(providerFor(cmd, cfg.Scrape.Provider))
+			sp, err := factory.Fetch(providerFor(cmd, cfg.Fetch.Provider))
 			if err != nil {
 				return err
 			}
-			result, err := sp.Scrape(ctx, url, config.ScrapeOptions{OutputFormat: outFormat})
+			result, err := sp.Fetch(ctx, url, config.FetchOptions{OutputFormat: outFormat})
 			logAutoAttempts(sp)
 			if err != nil {
 				return err
 			}
 			if result.Cached {
-				logx.Debug("scrape cache hit for %s", url)
+				logx.Debug("fetch cache hit for %s", url)
 			}
 			// Emit the raw page content in its requested format (markdown by
 			// default); the URL/format envelope would only get in the way.
@@ -424,9 +424,9 @@ func setupCache() (cache.Store, error) {
 		return nil, nil
 	}
 
-	// Only scrape and crawl are cached; search always hits the provider.
+	// Only fetch and crawl are cached; search always hits the provider.
 	ops := map[string]config.CacheConfig{
-		"scrape": cfg.Scrape.Cache,
+		"fetch": cfg.Fetch.Cache,
 		"crawl":  cfg.Crawl.Cache,
 	}
 	enabled := false
@@ -469,7 +469,7 @@ func ttlFor(c config.CacheConfig) time.Duration {
 	return cache.DefaultTTL
 }
 
-func parseFormat(s string) config.ScrapeOutputFormat {
+func parseFormat(s string) config.FetchOutputFormat {
 	switch s {
 	case "html":
 		return config.FormatHTML

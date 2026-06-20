@@ -9,7 +9,7 @@ import (
 
 func TestFactoryAutoSearchFiltersToConfigured(t *testing.T) {
 	// exa configured (key), brave not built (no key); chain lists both + a
-	// scrape-only provider (webcrawlerapi) that must be filtered for search.
+	// fetch-only provider (webcrawlerapi) that must be filtered for search.
 	f := NewFactory([]config.ProviderConfig{
 		{Name: "exa", APIKey: "k"},
 		{Name: "brave"}, // unconfigured -> not built -> skipped
@@ -45,15 +45,15 @@ func TestFactoryAutoSearchErrorsWhenChainEmpty(t *testing.T) {
 	}
 }
 
-func TestCachingScrapeForwardsAttempts(t *testing.T) {
-	inner := newAutoScrape([]autoScrapeEntry{{"a", fakeScrape{name: "a", content: "x"}}})
-	c := cachingScrape{ScrapeProvider: inner}
-	if _, err := inner.Scrape(context.Background(), "http://x", config.ScrapeOptions{}); err != nil {
+func TestCachingFetchForwardsAttempts(t *testing.T) {
+	inner := newAutoFetch([]autoFetchEntry{{"a", fakeFetch{name: "a", content: "x"}}})
+	c := cachingFetch{FetchProvider: inner}
+	if _, err := inner.Fetch(context.Background(), "http://x", config.FetchOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	ar, ok := any(c).(AutoReporter)
 	if !ok {
-		t.Fatal("cachingScrape should implement AutoReporter")
+		t.Fatal("cachingFetch should implement AutoReporter")
 	}
 	if len(ar.Attempts()) != 1 || ar.Attempts()[0].Provider != "a" {
 		t.Fatalf("attempts not forwarded: %+v", ar.Attempts())

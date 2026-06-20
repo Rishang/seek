@@ -9,7 +9,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// stub search/scrape providers for chain tests.
+// stub search/fetch providers for chain tests.
 type fakeSearch struct {
 	name    string
 	results []config.SearchResult
@@ -21,18 +21,18 @@ func (s fakeSearch) Search(_ context.Context, _ string, _ config.SearchOptions) 
 	return s.results, s.err
 }
 
-type fakeScrape struct {
+type fakeFetch struct {
 	name    string
 	content string
 	err     error
 }
 
-func (s fakeScrape) Name() string { return s.name }
-func (s fakeScrape) Scrape(_ context.Context, url string, _ config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (s fakeFetch) Name() string { return s.name }
+func (s fakeFetch) Fetch(_ context.Context, url string, _ config.FetchOptions) (*config.FetchResult, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
-	return &config.ScrapeResult{URL: url, Content: s.content}, nil
+	return &config.FetchResult{URL: url, Content: s.content}, nil
 }
 
 func hit(n int) []config.SearchResult {
@@ -86,12 +86,12 @@ func TestAutoSearchAllFailAggregates(t *testing.T) {
 	}
 }
 
-func TestAutoScrapeFailsOverOnEmptyContent(t *testing.T) {
-	a := newAutoScrape([]autoScrapeEntry{
-		{"a", fakeScrape{name: "a", content: ""}},
-		{"b", fakeScrape{name: "b", content: "hello"}},
+func TestAutoFetchFailsOverOnEmptyContent(t *testing.T) {
+	a := newAutoFetch([]autoFetchEntry{
+		{"a", fakeFetch{name: "a", content: ""}},
+		{"b", fakeFetch{name: "b", content: "hello"}},
 	})
-	res, err := a.Scrape(context.Background(), "http://x", config.ScrapeOptions{})
+	res, err := a.Fetch(context.Background(), "http://x", config.FetchOptions{})
 	if err != nil || res.Content != "hello" {
 		t.Fatalf("res=%v err=%v", res, err)
 	}

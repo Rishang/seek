@@ -95,7 +95,7 @@ func SaveProviders(path string, creds map[string]Credential) error {
 // try-order, serialized under the sibling top-level "providers" key.
 type Config struct {
 	Search Operation `yaml:"search"`
-	Scrape Operation `yaml:"scrape"`
+	Fetch Operation `yaml:"fetch"`
 	Crawl  Operation `yaml:"crawl"`
 
 	// Priority is the global "auto" try-order (index 0 = highest priority),
@@ -110,7 +110,7 @@ var DefaultPriority = []string{
 	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave",
 }
 
-// Operation configures a single capability (search, scrape, or crawl).
+// Operation configures a single capability (search, fetch, or crawl).
 type Operation struct {
 	Provider string      `yaml:"provider"`
 	Cache    CacheConfig `yaml:"cache,omitempty"`
@@ -131,23 +131,23 @@ func (c CacheConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 // default in that case).
 func (c CacheConfig) TTL() time.Duration { return time.Duration(c.TTLSecs) * time.Second }
 
-// Options carries per-operation tunables. Currently only scrape uses it.
+// Options carries per-operation tunables. Currently only fetch uses it.
 type Options struct {
-	OutputFormat ScrapeOutputFormat `yaml:"output_format,omitempty"`
+	OutputFormat FetchOutputFormat `yaml:"output_format,omitempty"`
 }
 
-// ScrapeOutputFormat controls the response format for scrape requests.
-type ScrapeOutputFormat string
+// FetchOutputFormat controls the response format for fetch requests.
+type FetchOutputFormat string
 
 const (
-	FormatJSON     ScrapeOutputFormat = "json"
-	FormatMarkdown ScrapeOutputFormat = "markdown"
-	FormatHTML     ScrapeOutputFormat = "html"
+	FormatJSON     FetchOutputFormat = "json"
+	FormatMarkdown FetchOutputFormat = "markdown"
+	FormatHTML     FetchOutputFormat = "html"
 )
 
-// ScrapeOptions carries optional parameters for a scrape request.
-type ScrapeOptions struct {
-	OutputFormat ScrapeOutputFormat `yaml:"output_format,omitempty"`
+// FetchOptions carries optional parameters for a fetch request.
+type FetchOptions struct {
+	OutputFormat FetchOutputFormat `yaml:"output_format,omitempty"`
 }
 
 // TimeRange is an inclusive published-date window for search results. A zero
@@ -173,8 +173,8 @@ type SearchResult struct {
 	PublishedDate string `json:"published_date,omitempty"`
 }
 
-// ScrapeResult holds the result of a scrape request.
-type ScrapeResult struct {
+// FetchResult holds the result of a fetch request.
+type FetchResult struct {
 	URL     string `json:"url"`
 	Content string `json:"content"`
 	Format  string `json:"format"`
@@ -200,10 +200,10 @@ func Default() Config {
 		on := true
 		return CacheConfig{Enabled: &on, Store: "sqlite"}
 	}
-	// Caching applies to scrape and crawl only; search has no cache config.
+	// Caching applies to fetch and crawl only; search has no cache config.
 	return Config{
 		Search: Operation{Provider: "auto"},
-		Scrape: Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
+		Fetch: Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
 
 		Priority: append([]string(nil), DefaultPriority...),

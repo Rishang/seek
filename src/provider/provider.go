@@ -18,9 +18,9 @@ type TimeRangeSearcher interface {
 	SupportsTimeRange() bool
 }
 
-// ScrapeProvider extracts content from a single URL.
-type ScrapeProvider interface {
-	Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error)
+// FetchProvider extracts content from a single URL.
+type FetchProvider interface {
+	Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error)
 }
 
 // CrawlProvider crawls a website starting from a URL.

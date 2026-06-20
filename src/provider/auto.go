@@ -67,28 +67,28 @@ func (a *autoSearch) Search(ctx context.Context, query string, opts config.Searc
 	return nil, chainError("search", a.attempts)
 }
 
-// ---- scrape ----
+// ---- fetch ----
 
-type autoScrapeEntry struct {
+type autoFetchEntry struct {
 	name string
-	sp   ScrapeProvider
+	sp   FetchProvider
 }
 
-type autoScrape struct {
-	chain    []autoScrapeEntry
+type autoFetch struct {
+	chain    []autoFetchEntry
 	attempts []Attempt // ponytail: mutated per call; single-shot per process, not safe for concurrent reuse
 }
 
-func newAutoScrape(chain []autoScrapeEntry) *autoScrape { return &autoScrape{chain: chain} }
+func newAutoFetch(chain []autoFetchEntry) *autoFetch { return &autoFetch{chain: chain} }
 
-func (a *autoScrape) Name() string { return "auto" }
+func (a *autoFetch) Name() string { return "auto" }
 
-func (a *autoScrape) Attempts() []Attempt { return a.attempts }
+func (a *autoFetch) Attempts() []Attempt { return a.attempts }
 
-func (a *autoScrape) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (a *autoFetch) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
 	a.attempts = a.attempts[:0]
 	for _, e := range a.chain {
-		res, err := e.sp.Scrape(ctx, url, opts)
+		res, err := e.sp.Fetch(ctx, url, opts)
 		if err != nil {
 			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: err})
 			continue
@@ -100,7 +100,7 @@ func (a *autoScrape) Scrape(ctx context.Context, url string, opts config.ScrapeO
 		a.attempts = append(a.attempts, Attempt{Provider: e.name})
 		return res, nil
 	}
-	return nil, chainError("scrape", a.attempts)
+	return nil, chainError("fetch", a.attempts)
 }
 
 // chainError aggregates the failed attempts into a single descriptive error.
@@ -122,6 +122,6 @@ var (
 	_ SearchProvider    = (*autoSearch)(nil)
 	_ AutoReporter      = (*autoSearch)(nil)
 	_ TimeRangeSearcher = (*autoSearch)(nil)
-	_ ScrapeProvider    = (*autoScrape)(nil)
-	_ AutoReporter      = (*autoScrape)(nil)
+	_ FetchProvider    = (*autoFetch)(nil)
+	_ AutoReporter      = (*autoFetch)(nil)
 )

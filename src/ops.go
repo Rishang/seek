@@ -39,28 +39,28 @@ func opSearch(ctx context.Context, providerName, query string, opts config.Searc
 	return results, nil
 }
 
-// opScrape runs a scrape. An empty providerName uses the configured default;
-// an empty format uses the configured scrape output format.
-func opScrape(ctx context.Context, providerName, url, format string) (*config.ScrapeResult, error) {
+// opFetch runs a fetch. An empty providerName uses the configured default;
+// an empty format uses the configured fetch output format.
+func opFetch(ctx context.Context, providerName, url, format string) (*config.FetchResult, error) {
 	if providerName == "" {
-		providerName = cfg.Scrape.Provider
+		providerName = cfg.Fetch.Provider
 	}
-	outFormat := cfg.Scrape.Options.OutputFormat
+	outFormat := cfg.Fetch.Options.OutputFormat
 	if format != "" {
 		outFormat = parseFormat(format)
 	}
-	logx.Debug("op: scrape provider=%s url=%q format=%s", providerName, url, outFormat)
-	sp, err := factory.Scrape(providerName)
+	logx.Debug("op: fetch provider=%s url=%q format=%s", providerName, url, outFormat)
+	sp, err := factory.Fetch(providerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := sp.Scrape(ctx, url, config.ScrapeOptions{OutputFormat: outFormat})
+	result, err := sp.Fetch(ctx, url, config.FetchOptions{OutputFormat: outFormat})
 	logAutoAttempts(sp)
 	if err != nil {
-		logx.Debug("op: scrape failed: %v", err)
+		logx.Debug("op: fetch failed: %v", err)
 		return nil, err
 	}
-	logx.Debug("op: scrape ok, %d bytes", len(result.Content))
+	logx.Debug("op: fetch ok, %d bytes", len(result.Content))
 	return result, nil
 }
 

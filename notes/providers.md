@@ -6,18 +6,18 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 ## Contents
 
 - [Capability matrix](#capability-matrix)
-- [The `auto` provider](#the-auto-provider-search--scrape)
+- [The `auto` provider](#the-auto-provider-search--fetch)
 - [Providers](#providers)
   - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa)
 - [Auth](#auth)
 - [Time range](#time-range)
 - [Published date](#published-date)
-- [Snippet (search) vs content (scrape)](#snippet-search-vs-content-scrape)
+- [Snippet (search) vs content (fetch)](#snippet-search-vs-content-fetch)
 - [Adding a provider](#adding-a-provider)
 
 ## Capability matrix
 
-| Provider        | Search | Scrape | Crawl | Time range | Published date | File              |
+| Provider        | Search | Fetch | Crawl | Time range | Published date | File              |
 |-----------------|:------:|:------:|:-----:|:----------:|:--------------:|-------------------|
 | firecrawl       |   ✓    |   ✓    |   ✓   |     ✓      |       —        | `firecrawl.go`    |
 | tavily          |   ✓    |   ✓    |   ✓   |     ✓      |   news only    | `tavily.go`       |
@@ -27,14 +27,14 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 | brave           |   ✓    |   —    |   —   |     ✓      |   `page_age`   | `brave.go`        |
 | exa             |   ✓    |   ✓    |   —   |     ✓      | `publishedDate`|  `exa.go`         |
 
-Capability = which of `SearchProvider` / `ScrapeProvider` / `CrawlProvider` the type implements
+Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
 
-## The `auto` provider (search & scrape)
+## The `auto` provider (search & fetch)
 
 `auto` is a meta-provider (`provider/auto.go`) that tries configured providers in
 priority order and returns the first non-empty result, failing over on either an
-error or an empty result. It is the default for `search` and `scrape`. Crawl does
+error or an empty result. It is the default for `search` and `fetch`. Crawl does
 not support it.
 
 - **Membership** comes from provider.yaml (plus env overrides): every provider you
@@ -69,7 +69,7 @@ Example config.yaml priority hint:
 
 **Docs:** https://docs.firecrawl.dev
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Search, Scrape, Crawl
+**Capabilities:** Search, Fetch, Crawl
 
 **Notes:**
 - Self-hostable via `host` override.
@@ -81,7 +81,7 @@ Example config.yaml priority hint:
 
 **Docs:** https://docs.tavily.com
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Search, Scrape (extract), Crawl
+**Capabilities:** Search, Fetch (extract), Crawl
 
 **Notes:**
 - `published_date` only for `topic=news`; empty for general search.
@@ -93,10 +93,10 @@ Example config.yaml priority hint:
 
 **Docs:** https://spider.cloud/docs/api
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Search, Scrape, Crawl
+**Capabilities:** Search, Fetch, Crawl
 
 **Notes:**
-- Search auto-scrapes results (returns content, not just links).
+- Search auto-fetchs results (returns content, not just links).
 - `tbs` Google-style time filter.
 
 ---
@@ -105,7 +105,7 @@ Example config.yaml priority hint:
 
 **Docs:** https://webcrawlerapi.com/docs
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Scrape, Crawl
+**Capabilities:** Fetch, Crawl
 
 ---
 
@@ -113,7 +113,7 @@ Example config.yaml priority hint:
 
 **Docs:** https://lightpanda.io/docs/usage/api
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Scrape
+**Capabilities:** Fetch
 
 **Notes:**
 - Lightweight headless browser; self-hostable via `host` override.
@@ -135,7 +135,7 @@ Example config.yaml priority hint:
 
 **Docs:** https://exa.ai/docs/reference/search
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Search, Scrape (`/contents`)
+**Capabilities:** Search, Fetch (`/contents`)
 
 **Notes:**
 - Neural search returns inline excerpts (search alone often yields usable content).
@@ -177,11 +177,11 @@ Maps to `SearchResult.PublishedDate` (JSON `published_date`, `omitempty`):
 So a docs/landing page with no date, or a general (non-news) tavily query, yields no
 `published_date` — expected, not a bug. Use `-p brave` or `-p exa` on date-bearing pages.
 
-## Snippet (search) vs content (scrape)
+## Snippet (search) vs content (fetch)
 
 - Search returns short `Snippet`s, not full pages. exa/spider pull a small excerpt inline;
   brave/tavily/firecrawl return their description/content field.
-- For full page text, `scrape` the URL. exa search excerpts are often enough to skip the scrape.
+- For full page text, `fetch` the URL. exa search excerpts are often enough to skip the fetch.
 
 ## Adding a provider
 
@@ -190,5 +190,5 @@ So a docs/landing page with no date, or a general (non-news) tavily query, yield
 3. Add `SupportsTimeRange() bool` if it honors a date window.
 4. Register the `case` in `factory.go`; add the env var to `providerEnv` in `main.go`.
 5. Add it to the provider lists in `config_cmd.go` and the usage strings in `main.go`.
-6. If it supports search or scrape, add it to `defaultAutoChains` (`config_cmd.go`) so the `auto` provider ranks it.
+6. If it supports search or fetch, add it to `defaultAutoChains` (`config_cmd.go`) so the `auto` provider ranks it.
 7. Document the upstream API in `.idea/providers.md` and add a row here.

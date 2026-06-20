@@ -7,13 +7,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestDefaultUsesAutoForSearchAndScrape(t *testing.T) {
+func TestDefaultUsesAutoForSearchAndFetch(t *testing.T) {
 	d := Default()
 	if d.Search.Provider != "auto" {
 		t.Errorf("search provider: want auto, got %q", d.Search.Provider)
 	}
-	if d.Scrape.Provider != "auto" {
-		t.Errorf("scrape provider: want auto, got %q", d.Scrape.Provider)
+	if d.Fetch.Provider != "auto" {
+		t.Errorf("fetch provider: want auto, got %q", d.Fetch.Provider)
 	}
 	if d.Crawl.Provider != "firecrawl" {
 		t.Errorf("crawl provider: want firecrawl, got %q", d.Crawl.Provider)

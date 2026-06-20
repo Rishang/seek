@@ -33,7 +33,7 @@ func mcpCmd() *cli.Command {
 		Usage:     "Run seek as an MCP server (stdio)",
 		UsageText: "seek mcp",
 		Description: "Speak the Model Context Protocol over stdio so MCP-capable agents can\n" +
-			"call seek's search, scrape, and crawl tools. stdout carries the JSON-RPC\n" +
+			"call seek's search, fetch, and crawl tools. stdout carries the JSON-RPC\n" +
 			"stream; logs go to stderr. Requests are handled concurrently.",
 		Action: func(ctx context.Context, _ *cli.Command) error {
 			return runMCP(ctx)
@@ -42,7 +42,7 @@ func mcpCmd() *cli.Command {
 }
 
 // runMCP reads JSON-RPC requests line by line and dispatches each in its own
-// goroutine, so a slow scrape never blocks other in-flight calls. Writes are
+// goroutine, so a slow fetch never blocks other in-flight calls. Writes are
 // serialized by mcpConn; responses may arrive out of order (each carries its
 // request id, as JSON-RPC allows).
 func runMCP(ctx context.Context) error {
@@ -170,12 +170,12 @@ var mcpTools = []obj{
 		},
 	},
 	{
-		"name":        "scrape",
+		"name":        "fetch",
 		"description": "Extract a single page's content. Returns the page as markdown (or the requested format).",
 		"inputSchema": obj{
 			"type": "object",
 			"properties": obj{
-				"url":      obj{"type": "string", "description": "Page URL to scrape"},
+				"url":      obj{"type": "string", "description": "Page URL to fetch"},
 				"provider": obj{"type": "string", "description": "Override provider; defaults to the configured one (auto)"},
 				"format":   obj{"type": "string", "enum": []string{"markdown", "html", "json"}, "description": "Output format (default markdown)"},
 			},
@@ -237,15 +237,15 @@ func callTool(ctx context.Context, name string, args json.RawMessage) (string, e
 		}
 		return jsonString(results), nil
 
-	case "scrape":
-		var a scrapeRequest
+	case "fetch":
+		var a fetchRequest
 		if err := json.Unmarshal(args, &a); err != nil {
 			return "", fmt.Errorf("invalid arguments: %w", err)
 		}
 		if a.URL == "" {
 			return "", fmt.Errorf("url is required")
 		}
-		result, err := opScrape(ctx, a.Provider, a.URL, a.Format)
+		result, err := opFetch(ctx, a.Provider, a.URL, a.Format)
 		if err != nil {
 			return "", err
 		}

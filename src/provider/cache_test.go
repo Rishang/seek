@@ -10,12 +10,12 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// stubScrape records how many times the underlying provider is hit.
-type stubScrape struct{ calls int }
+// stubFetch records how many times the underlying provider is hit.
+type stubFetch struct{ calls int }
 
-func (s *stubScrape) Scrape(_ context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (s *stubFetch) Fetch(_ context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
 	s.calls++
-	return &config.ScrapeResult{URL: url, Content: "fresh", Format: string(opts.OutputFormat)}, nil
+	return &config.FetchResult{URL: url, Content: "fresh", Format: string(opts.OutputFormat)}, nil
 }
 
 func newStore(t *testing.T) cache.Store {
@@ -28,25 +28,25 @@ func newStore(t *testing.T) cache.Store {
 	return store
 }
 
-func TestCachingScrapeHitMiss(t *testing.T) {
+func TestCachingFetchHitMiss(t *testing.T) {
 	ctx := context.Background()
-	stub := &stubScrape{}
-	dec := cachingScrape{
-		ScrapeProvider: stub,
+	stub := &stubFetch{}
+	dec := cachingFetch{
+		FetchProvider: stub,
 		store:          newStore(t),
 		provider:       "firecrawl",
 		ttl:            time.Hour,
 	}
-	opts := config.ScrapeOptions{OutputFormat: config.FormatMarkdown}
+	opts := config.FetchOptions{OutputFormat: config.FormatMarkdown}
 
 	// First call: miss -> hits the underlying provider and caches.
-	if _, err := dec.Scrape(ctx, "https://example.com", opts); err != nil {
-		t.Fatalf("first scrape: %v", err)
+	if _, err := dec.Fetch(ctx, "https://example.com", opts); err != nil {
+		t.Fatalf("first fetch: %v", err)
 	}
 	// Second call: hit -> served from cache, no extra provider call.
-	res, err := dec.Scrape(ctx, "https://example.com", opts)
+	res, err := dec.Fetch(ctx, "https://example.com", opts)
 	if err != nil {
-		t.Fatalf("second scrape: %v", err)
+		t.Fatalf("second fetch: %v", err)
 	}
 	if stub.calls != 1 {
 		t.Fatalf("expected 1 underlying call, got %d", stub.calls)
@@ -56,8 +56,8 @@ func TestCachingScrapeHitMiss(t *testing.T) {
 	}
 
 	// A different format is a distinct cache key -> another provider call.
-	if _, err := dec.Scrape(ctx, "https://example.com", config.ScrapeOptions{OutputFormat: config.FormatHTML}); err != nil {
-		t.Fatalf("html scrape: %v", err)
+	if _, err := dec.Fetch(ctx, "https://example.com", config.FetchOptions{OutputFormat: config.FormatHTML}); err != nil {
+		t.Fatalf("html fetch: %v", err)
 	}
 	if stub.calls != 2 {
 		t.Fatalf("expected 2 underlying calls after format change, got %d", stub.calls)

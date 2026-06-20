@@ -7,7 +7,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// SpiderProvider supports search, scrape, and crawl via spider.cloud.
+// SpiderProvider supports search, fetch, and crawl via spider.cloud.
 // Docs: https://spider.cloud/docs/api
 type SpiderProvider struct {
 	*httpClient
@@ -86,9 +86,9 @@ func (p *SpiderProvider) Search(ctx context.Context, query string, opts config.S
 	return results, nil
 }
 
-// ---- Scrape ----
+// ---- Fetch ----
 
-func (p *SpiderProvider) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (p *SpiderProvider) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
 	format := "markdown"
 	if opts.OutputFormat == config.FormatHTML {
 		format = "raw"
@@ -102,15 +102,15 @@ func (p *SpiderProvider) Scrape(ctx context.Context, url string, opts config.Scr
 	}
 
 	var pages []spPage
-	if err := p.post(ctx, "scrape", spiderBaseURL+"/scrape", &body, &pages); err != nil {
+	if err := p.post(ctx, "fetch", spiderBaseURL+"/scrape", &body, &pages); err != nil {
 		return nil, err
 	}
 
 	if len(pages) == 0 {
-		return nil, fmt.Errorf("spider.cloud scrape returned no pages for %s", url)
+		return nil, fmt.Errorf("spider.cloud fetch returned no pages for %s", url)
 	}
 
-	return &config.ScrapeResult{
+	return &config.FetchResult{
 		URL:     url,
 		Content: pages[0].Content,
 		Format:  string(opts.OutputFormat),
@@ -150,6 +150,6 @@ func (p *SpiderProvider) Crawl(ctx context.Context, url string) (*config.CrawlRe
 
 var (
 	_ SearchProvider = (*SpiderProvider)(nil)
-	_ ScrapeProvider = (*SpiderProvider)(nil)
+	_ FetchProvider = (*SpiderProvider)(nil)
 	_ CrawlProvider  = (*SpiderProvider)(nil)
 )

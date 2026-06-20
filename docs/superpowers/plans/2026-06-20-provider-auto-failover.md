@@ -17,7 +17,7 @@
 - Every provider file ends with compile-time interface checks (`var _ Interface = (*T)(nil)`).
 - Wrap errors with context: `fmt.Errorf("... %w", ...)`.
 - Use the Taskfile: `task test`, `task vet`, `task fmt`. Run from repo root. Before finishing each task: tests green.
-- Scope: **search + scrape only**. Crawl is untouched.
+- Scope: **search + fetch only**. Crawl is untouched.
 
 ---
 
@@ -28,7 +28,7 @@
 - Test: `config/config_auto_test.go` (create)
 
 **Interfaces:**
-- Produces: `config.Operation.Priority []string` (yaml `priority,omitempty`); `config.Default()` returns `Search.Provider == "auto"`, `Scrape.Provider == "auto"`, `Crawl.Provider == "firecrawl"`.
+- Produces: `config.Operation.Priority []string` (yaml `priority,omitempty`); `config.Default()` returns `Search.Provider == "auto"`, `Fetch.Provider == "auto"`, `Crawl.Provider == "firecrawl"`.
 
 - [ ] **Step 1: Write the failing test**
 

@@ -5,7 +5,7 @@ import "testing"
 func TestAutoCandidatesFiltersByCapabilityInPriorityOrder(t *testing.T) {
 	// Global priority lists providers across all capabilities; for "search" only
 	// search-capable ones survive, in priority order. webcrawlerapi/lightpanda
-	// are scrape/crawl-only and must be dropped.
+	// are fetch/crawl-only and must be dropped.
 	priority := []string{"webcrawlerapi", "exa", "lightpanda", "brave", "auto", "exa"}
 	got := autoCandidates("search", priority)
 
