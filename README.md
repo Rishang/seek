@@ -17,7 +17,9 @@
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> ·
-  <a href="#-wire-into-your-agent">Wire Into Your Agent</a> ·
+  <a href="#-the-skill--how-the-agent-learns-to-use-seek">The SKILL</a> ·
+  <a href="#-install-in-one-shot--let-the-agent-do-it">One-Shot Install</a> ·
+  <a href="#-manual-setup--per-agent">Per-Agent Setup</a> ·
   <a href="#-providers">Providers</a> ·
   <a href="#-commands">Commands</a> ·
   <a href="#-faq">FAQ</a>
@@ -26,7 +28,7 @@
 ---
 
 > **seek is a tool *for* coding agents, not for humans.**  
-> You install it once. Claude Code, Cline, OpenCode, Gemini CLI — your agent calls it on every web lookup. You never type `seek` again.
+> You install it once. Claude Code, Cline, OpenCode, Antigravity CLI — your agent calls it on every web lookup. You never type `seek` again.
 
 ---
 
@@ -70,46 +72,277 @@ seek config init   # interactive form — paste in your API keys
 
 You need at least one key from any of the [7 supported providers](#-providers). Free tiers work.
 
-**Step 3 — Wire it into your agent**
+**Step 3 — Wire it into your agent** _(easiest: just ask your agent to do it)_
 
 ```sh
-# Claude Code
-mkdir -p ~/.claude/skills/web-fetch
-cp skills/SKILL.md ~/.claude/skills/web-fetch/
+# Claude Code — run in terminal (one-shot; needs shell access)
+claude -p "install seek from https://github.com/Rishang/seek and register its web-fetch skill" \
+  --permission-mode acceptEdits
 
-# Any MCP agent (Cline, Cursor, OpenCode, Gemini CLI...)
-# Add to your agent's MCP config:
-{ "command": "seek", "args": ["mcp"] }
+# OpenCode — run in terminal
+opencode run "install seek and wire it as an MCP server — ref https://github.com/Rishang/seek"
+
+# Antigravity CLI (agy) — run in terminal (one-shot; needs shell access)
+agy -p "install seek from https://github.com/Rishang/seek and configure it as an MCP server" \
+  --dangerously-skip-permissions
+
+# Cline / Cursor / any MCP agent — paste in chat (no shell wrapper):
+# install seek from https://github.com/Rishang/seek and add it as an MCP server
+
+# Pi addon — if you use Pi as your harness (https://github.com/earendil-works/pi)
+pi -p "install seek from https://github.com/Rishang/seek and register its web-fetch skill"
 ```
 
-That's it. Your agent now has live web access with automatic failover across providers.
+The agent reads this README, runs the install, and wires itself up. You just supply the API keys.
+
+→ Need to do it manually? See [per-agent setup](#-manual-setup--per-agent).
 
 ---
 
-## 🔌 Wire Into Your Agent
+## 🧠 The SKILL — How the Agent Learns to Use seek
 
-seek has three integration modes — pick the one your agent speaks.
+[`skills/SKILL.md`](https://github.com/Rishang/seek/blob/main/skills/SKILL.md) is a plain Markdown file you drop into your agent's skills folder. The agent reads it once and learns everything — what commands to run, when to stop, how to stay cheap. No prompting, no wrapping, no custom code required.
 
-### Skill  _(Claude Code · any skills-directory agent)_
+The file has a metadata header that agents use to discover and load it:
 
-Drop `skills/SKILL.md` into the agent's skills folder:
-
-```sh
-mkdir -p ~/.claude/skills/web-fetch
-cp skills/SKILL.md ~/.claude/skills/web-fetch/
+```
+name:        web-fetch
+description: Search the web and fetch full page content via seek
+             (firecrawl/tavily/brave/spider). Use for research,
+             fact-checking, documentation lookups, or any task
+             requiring current web information.
 ```
 
-The agent reads the skill and learns the **cheap search loop**:
+---
 
-1. `seek search -o csv "<query>"` — read the snippets. Often the snippet *is* the answer. Stop here.
-2. Only if a detail is missing → `seek fetch "<best-url>"` — one page, full markdown.
-3. Stop the moment the objective is met.
+### The Loop: search → decide → maybe fetch → stop
 
-Token-budget guards are baked into the skill so research stays cheap — snippets before fetches, one page at a time, no crawling unless asked.
+```
+seek search -o csv "<query>"
+# output: title,url,snippet,published_date  (one row per result)
+```
 
-### MCP Server  _(Cline · Cursor · OpenCode · Gemini CLI · anything MCP-native)_
+The snippet is substantial — often several sentences, not a teaser. **For many lookups the snippet already is the answer.**
 
-Register `seek mcp` as a stdio MCP server in your agent's config:
+```
+Step 1 — Search
+  seek search -o csv "<query>"  →  read snippets + URLs
+
+Step 2 — Decide
+  Snippets answer the objective?
+    YES → STOP. Answer from snippets. Don't fetch.
+    NO  → fetch the single most relevant URL.
+
+Step 3 — Fetch (only if needed)
+  seek fetch "<url>"  →  full page as markdown
+
+Step 4 — Stop the moment the objective is met.
+  First page missed → fetch the next best ONCE, then re-decide.
+  Never fetch a second URL "to be thorough."
+```
+
+---
+
+### Shortcuts That Skip Search Entirely
+
+The SKILL also teaches the agent smarter paths when search isn't needed:
+
+**Have the exact URL?**
+```sh
+seek fetch "https://<host>/<path>"
+# Done. No search round-trip.
+```
+
+**Know the doc site domain but not the path?**
+```sh
+# Guess the conventional structure first (Mintlify/Docusaurus pattern)
+seek fetch "https://docs.example.com/<topic>/overview"
+# Real content? Done — the page's own nav exposes every sibling URL.
+```
+
+**Know the domain but not the structure?**
+```sh
+# Fetch the index and grep — one piped command
+seek fetch "https://<host>/llms.txt" | rg "<keyword>" | head -20
+# Hit  → fetch that URL
+# Miss → fall back to seek search
+```
+
+> If `llms.txt` returns "omitted" / "truncated" / "pages omitted" — skip the grep, go straight to `seek search`.
+
+---
+
+### Hard Limits Built Into the SKILL
+
+These guards are baked in so the agent never burns your token budget:
+
+| Rule | Why |
+|---|---|
+| Snippets before fetches | Every fetch is a full page of tokens |
+| One page at a time | Never batch-fetch; read before getting the next |
+| Pipe `llms.txt` through `rg`, never dump it raw | Indexes can be enormous |
+| No `seek crawl` unless explicitly asked | Crawl pulls many pages — for lookups, one search + one fetch is enough |
+| Empty fetch → one retry max, then fall back to `seek search` | Never loop fetches |
+| Not for APIs or local files | Use `curl` / `bash` / `read` instead |
+
+---
+
+### SKILL vs MCP — Which Should You Use?
+
+| | SKILL (Markdown file) | MCP Server (`seek mcp`) |
+|---|---|---|
+| How the agent gets it | Reads a `.md` file from its skills dir | Registered as a stdio MCP server |
+| Token efficiency | Agent follows the built-in loop + guards | Agent decides when/how to call tools |
+| Works with | Claude Code, Kilo Code, any skills-dir agent (incl. [Pi](https://github.com/earendil-works/pi) addon) | Cline, Cursor, OpenCode, Antigravity CLI, any MCP agent |
+| Setup | Drop one file | Add one JSON block |
+| Recommended for | Claude Code users | Everyone else |
+
+Both use the same seek binary, same providers, same failover underneath.
+
+---
+
+## 🚀 Install in One Shot — Let the Agent Do It
+
+This is the fastest path. **You don't need to manually copy files or edit configs.** Run one command in your terminal, or paste a prompt into your agent's chat. It reads this README, runs the install, drops the skill file, and reports back. You only need to supply your provider API keys afterwards (`seek config init`).
+
+### Claude Code
+
+```sh
+claude -p "install seek from https://github.com/Rishang/seek and register its web-fetch skill so you can search the web in future tasks" \
+  --permission-mode acceptEdits
+```
+
+Or start an interactive session with the same prompt: `claude "install seek …"`.
+
+Claude reads the README, runs the install script, and copies `SKILL.md` into `~/.claude/skills/web-fetch/` automatically.
+
+### OpenCode
+
+```sh
+opencode run "install seek and wire it as an MCP server — ref https://github.com/Rishang/seek/blob/main/README.md"
+```
+
+### Cline (VS Code)
+
+In the Cline chat panel:
+
+```
+install seek from https://github.com/Rishang/seek and add it as an MCP server to my Cline config
+```
+
+### Cursor
+
+In Cursor's composer:
+
+```
+install seek (https://github.com/Rishang/seek) and register it as an MCP server in my .cursor/mcp.json
+```
+
+### Antigravity CLI (agy)
+
+```sh
+agy -p "install seek from https://github.com/Rishang/seek and configure it as an MCP server" \
+  --dangerously-skip-permissions
+```
+
+Or start an interactive session with the same prompt: `agy -i "install seek …"`.
+
+### Pi
+
+If you use [Pi](https://github.com/earendil-works/pi) as your agent harness, register the skill (Pi's native integration — no MCP needed):
+
+```sh
+pi -p "install seek from https://github.com/Rishang/seek and register its web-fetch skill so you can search the web in future tasks"
+```
+
+Or start an interactive session: `pi "install seek …"`.
+
+### Any other agent
+
+The pattern is always the same — point the agent at this README and tell it what to do (in chat, no shell wrapper):
+
+```
+install seek from https://github.com/Rishang/seek and wire it up so you can search the web
+```
+
+Any agent that can read a URL and run shell commands can set itself up.
+
+---
+
+## 🔌 Manual Setup — Per Agent
+
+Prefer to wire it up yourself? Here are the exact steps per agent.
+
+### Claude Code — Skill (recommended)
+
+The Skill is the native integration for Claude Code. Drop it in once; Claude reads it on every session.
+
+```sh
+# Global (all projects)
+mkdir -p ~/.claude/skills/web-fetch
+curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/skills/SKILL.md \
+  -o ~/.claude/skills/web-fetch/SKILL.md
+
+# Project-only
+mkdir -p .claude/skills/web-fetch
+curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/skills/SKILL.md \
+  -o .claude/skills/web-fetch/SKILL.md
+```
+
+That's it. No config file, no restart. Claude picks up the skill on the next session.
+
+### Pi (addon) — Skill
+
+If you use [Pi](https://github.com/earendil-works/pi) as your harness, drop the skill in Pi's skills dir:
+
+```sh
+# Global (all projects)
+mkdir -p ~/.pi/agent/skills/web-fetch
+curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/skills/SKILL.md \
+  -o ~/.pi/agent/skills/web-fetch/SKILL.md
+
+# Project-only
+mkdir -p .pi/skills/web-fetch
+curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/skills/SKILL.md \
+  -o .pi/skills/web-fetch/SKILL.md
+```
+
+Invoke via `/skill:web-fetch` or let Pi load it automatically when relevant.
+
+### OpenCode — MCP Server
+
+Add to `~/.config/opencode/config.json` (or your project's `opencode.json`):
+
+```json
+{
+  "mcp": {
+    "seek": {
+      "command": "seek",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Cline (VS Code) — MCP Server
+
+Open the Cline MCP settings (gear icon → MCP Servers) and add:
+
+```json
+{
+  "seek": {
+    "command": "seek",
+    "args": ["mcp"],
+    "disabled": false
+  }
+}
+```
+
+Or edit `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` directly.
+
+### Cursor — MCP Server
+
+Create or edit `~/.cursor/mcp.json`:
 
 ```json
 {
@@ -122,9 +355,43 @@ Register `seek mcp` as a stdio MCP server in your agent's config:
 }
 ```
 
-Exposes `search`, `fetch`, and `crawl` as MCP tools — same providers, same failover, same output.
+Restart Cursor. seek will appear in the available tools list.
 
-### HTTP API  _(any other tool · webhooks · custom pipelines)_
+### Antigravity CLI (agy) — MCP Server
+
+Add to `~/.gemini/antigravity-cli/mcp_config.json` (or `.agents/mcp_config.json` in your project):
+
+```json
+{
+  "mcpServers": {
+    "seek": {
+      "command": "seek",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Use `/mcp` inside `agy` to verify the server is connected.
+
+### Kilo Code / Aider / Any MCP-native agent
+
+The MCP config block is the same for every agent that speaks MCP (JSON-RPC 2.0 over stdio):
+
+```json
+{
+  "mcpServers": {
+    "seek": {
+      "command": "seek",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+`seek mcp` exposes three tools — `search`, `fetch`, `crawl` — with the same provider failover as the CLI. The agent sees tools, not providers.
+
+### HTTP API — Any custom tool or pipeline
 
 ```sh
 seek serve --addr 127.0.0.1:8787 --token "$SEEK_SERVE_TOKEN"
@@ -140,14 +407,9 @@ curl -s localhost:8787/fetch \
   -d '{"url": "https://go.dev/doc/devel/release", "format": "markdown"}'
 ```
 
-Swagger UI at `GET /docs`, OpenAPI spec at `GET /openapi.json`.
+Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at `GET /healthz`
 
-### Let the agent set itself up
-
-```sh
-claude "read https://github.com/Rishang/seek/blob/main/README.md, install seek, and register its web-fetch skill"
-# works the same for any agent that can read a URL and run shell commands
-```
+> ⚠️ Without `--token`, the API is unauthenticated — anyone who can reach the port can spend your provider keys. Always set a token, or bind to loopback only.
 
 ---
 
