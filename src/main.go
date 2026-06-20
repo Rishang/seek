@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -23,19 +24,76 @@ var (
 // -ldflags "-X main.version=<tag>". Defaults to "dev" for local builds.
 var version = "dev"
 
+// repoSlug is the owner/repo used for the latest-release check. GitHub's API
+// is case-insensitive on the owner; this matches install.sh and the README.
+const repoSlug = "Rishang/seek"
+
 // versionCmd prints the build version (set from the release tag via
 // Taskfile build:release / .github/workflows/release.yml). Mirrors the
-// --version flag as a subcommand: `seek version`.
+// --version flag as a subcommand: `seek version`. It also makes a best-effort
+// GitHub call to compare against the latest release.
 func versionCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "version",
-		Usage:     "Print the seek version",
+		Usage:     "Print the seek version and check for updates",
 		UsageText: "seek version",
-		Action: func(_ context.Context, _ *cli.Command) error {
+		Action: func(ctx context.Context, _ *cli.Command) error {
 			fmt.Printf("seek version %s\n", version)
+			latest, ok := latestRelease(ctx)
+			if line := versionStatus(version, latest, ok); line != "" {
+				fmt.Println(line)
+			}
 			return nil
 		},
 	}
+}
+
+// versionStatus is the human update line comparing the running version to the
+// latest release. It returns "" when the check was unavailable, so a failed
+// network call simply prints nothing extra.
+func versionStatus(current, latest string, ok bool) string {
+	switch {
+	case !ok:
+		return ""
+	case current == latest:
+		return fmt.Sprintf("your version %s is the latest version", current)
+	default:
+		return fmt.Sprintf("the latest version is %s, yours is %s — please update", latest, current)
+	}
+}
+
+// latestRelease fetches the newest published release tag from GitHub. It is
+// best-effort: any failure (offline, rate-limited, timeout, bad status)
+// returns ok=false with no error, so `seek version` never fails on the network.
+// ponytail: 3s ceiling; bump it or add caching if the check ever feels slow.
+func latestRelease(ctx context.Context) (string, bool) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	url := "https://api.github.com/repos/" + repoSlug + "/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", false
+	}
+	req.Header.Set("User-Agent", "seek-cli") // GitHub rejects requests without one
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", false
+	}
+
+	var rel struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil || rel.TagName == "" {
+		return "", false
+	}
+	return rel.TagName, true
 }
 
 // noCacheFlag bypasses the result cache for a single request. Shared across the
