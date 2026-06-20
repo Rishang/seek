@@ -1,69 +1,73 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="seek badger logo">
-  <title>seek</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Background -->
+  <circle cx="512" cy="512" r="480" fill="#171a26"/>
+  <circle cx="512" cy="512" r="480" fill="none" stroke="#4d4f60" stroke-width="12"/>
 
-  <!-- dark disc with a soft lighter rim -->
-  <circle cx="512" cy="512" r="500" fill="#3a3d45"/>
-  <circle cx="512" cy="512" r="486" fill="#17181c"/>
+  <!-- Ears -->
+  <circle cx="305" cy="258" r="70" fill="#f5f5f7"/>
+  <circle cx="719" cy="258" r="70" fill="#f5f5f7"/>
 
-  <!-- ears (behind the face): grey outer, pink inner -->
-  <circle cx="318" cy="332" r="106" fill="#cdd0d5"/>
-  <circle cx="706" cy="332" r="106" fill="#cdd0d5"/>
-  <circle cx="326" cy="352" r="58" fill="#f3a7af"/>
-  <circle cx="698" cy="352" r="58" fill="#f3a7af"/>
+  <circle cx="305" cy="258" r="42" fill="#f7c0ca"/>
+  <circle cx="719" cy="258" r="42" fill="#f7c0ca"/>
 
-  <!-- white face -->
-  <path d="M512 252
-           C706 252 856 372 856 566
-           C856 766 706 910 512 948
-           C318 910 168 766 168 566
-           C168 372 318 252 512 252 Z"
-        fill="#f7f7f4"/>
+  <!-- Face -->
+  <ellipse cx="512" cy="525" rx="315" ry="280" fill="#f5f5f7"/>
 
-  <!-- blush cheeks with little white ticks -->
-  <ellipse cx="286" cy="742" rx="58" ry="34" fill="#f4aab2"/>
-  <ellipse cx="738" cy="742" rx="58" ry="34" fill="#f4aab2"/>
-  <g stroke="#ffffff" stroke-width="7" stroke-linecap="round" opacity="0.9">
-    <path d="M262 752 l18 -22"/>
-    <path d="M286 758 l18 -22"/>
-    <path d="M310 752 l18 -22"/>
-    <path d="M714 752 l18 -22"/>
-    <path d="M738 758 l18 -22"/>
-    <path d="M762 752 l18 -22"/>
-  </g>
+  <!-- Left stripe -->
+  <path d="
+    M395 245
+    C320 280 270 360 270 500
+    C270 610 315 700 395 770
+    C455 650 460 390 395 245
+    Z"
+    fill="#1a1a20"/>
 
-  <!-- black eye-stripes (mirrored) + central forehead spike -->
-  <g fill="#16161a">
-    <path id="stripe" d="M500 300
-             C440 286 360 286 300 312
-             C250 392 250 506 286 614
-             C316 706 372 792 446 820
-             C476 724 470 612 470 556
-             C470 470 478 386 500 300 Z"/>
-    <use href="#stripe" transform="matrix(-1,0,0,1,1024,0)"/>
-    <path d="M476 286 C500 282 524 282 548 286
-             C540 332 528 362 512 380
-             C496 362 484 332 476 286 Z"/>
-  </g>
+  <!-- Right stripe -->
+  <path d="
+    M629 245
+    C704 280 754 360 754 500
+    C754 610 709 700 629 770
+    C569 650 564 390 629 245
+    Z"
+    fill="#1a1a20"/>
 
-  <!-- big glossy eyes -->
-  <g>
-    <ellipse cx="404" cy="650" rx="66" ry="78" fill="#101012"/>
-    <ellipse cx="620" cy="650" rx="66" ry="78" fill="#101012"/>
-    <circle cx="384" cy="622" r="22" fill="#ffffff"/>
-    <circle cx="640" cy="622" r="22" fill="#ffffff"/>
-    <circle cx="420" cy="676" r="11" fill="#ffffff"/>
-    <circle cx="604" cy="676" r="11" fill="#ffffff"/>
-  </g>
+  <!-- Eyes -->
+  <circle cx="430" cy="520" r="60" fill="#fff"/>
+  <circle cx="594" cy="520" r="60" fill="#fff"/>
 
-  <!-- nose, philtrum and smile -->
-  <path d="M512 766
-           C556 766 582 786 582 812
-           C582 842 548 864 512 876
-           C476 864 442 842 442 812
-           C442 786 468 766 512 766 Z"
-        fill="#101012"/>
-  <ellipse cx="492" cy="792" rx="13" ry="8" fill="#ffffff" opacity="0.6"/>
-  <path d="M512 876 L512 904" fill="none" stroke="#101012" stroke-width="7" stroke-linecap="round"/>
-  <path d="M460 900 Q489 930 512 914 Q535 930 564 900"
-        fill="none" stroke="#101012" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="430" cy="530" r="42" fill="#111"/>
+  <circle cx="594" cy="530" r="42" fill="#111"/>
+
+  <circle cx="455" cy="495" r="18" fill="#fff"/>
+  <circle cx="619" cy="495" r="18" fill="#fff"/>
+
+  <circle cx="415" cy="570" r="10" fill="#fff"/>
+  <circle cx="579" cy="570" r="10" fill="#fff"/>
+
+  <!-- Blush -->
+  <ellipse cx="305" cy="625" rx="55" ry="32" fill="#f8bcc7"/>
+  <ellipse cx="719" cy="625" rx="55" ry="32" fill="#f8bcc7"/>
+
+  <!-- Blush highlights -->
+  <rect x="285" y="610" width="8" height="24" rx="4" fill="#fff" transform="rotate(25 289 622)"/>
+  <rect x="315" y="610" width="8" height="24" rx="4" fill="#fff" transform="rotate(10 319 622)"/>
+  <rect x="345" y="610" width="8" height="24" rx="4" fill="#fff" transform="rotate(-10 349 622)"/>
+
+  <rect x="671" y="610" width="8" height="24" rx="4" fill="#fff" transform="rotate(10 675 622)"/>
+  <rect x="701" y="610" width="8" height="24" rx="4" fill="#fff" transform="rotate(-10 705 622)"/>
+  <rect x="731" y="610" width="8" height="24" rx="4" fill="#fff" transform="rotate(-25 735 622)"/>
+
+  <!-- Nose -->
+  <ellipse cx="512" cy="665" rx="52" ry="38" fill="#111"/>
+
+  <ellipse cx="490" cy="650" rx="16" ry="10" fill="#fff"/>
+
+  <!-- Smile -->
+  <path
+    d="M470 760 Q512 800 554 760"
+    fill="none"
+    stroke="#111"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
 </svg>
