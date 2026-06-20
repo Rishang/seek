@@ -35,33 +35,40 @@ type braveResult struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
+	PageAge     string `json:"page_age"` // ISO 8601 publish date, when known
 }
 
 // ---- Search ----
 
-func (p *BraveProvider) Search(ctx context.Context, query string) ([]config.SearchResult, error) {
+func (p *BraveProvider) SupportsTimeRange() bool { return true }
+
+func (p *BraveProvider) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	var resp braveSearchResponse
-	r, err := p.client.R().
+	r := p.client.R().
 		SetContext(ctx).
 		SetHeader("Accept", "application/json").
 		SetHeader("X-Subscription-Token", p.apiKey).
 		SetQueryParam("q", query).
 		SetQueryParam("count", "10").
-		SetSuccessResult(&resp).
-		Get("https://api.search.brave.com/res/v1/web/search")
+		SetSuccessResult(&resp)
+	if freshness := braveFreshness(opts.TimeRange); freshness != "" {
+		r.SetQueryParam("freshness", freshness)
+	}
+	resp1, err := r.Get("https://api.search.brave.com/res/v1/web/search")
 	if err != nil {
 		return nil, fmt.Errorf("brave search request failed: %w", err)
 	}
-	if err := p.expectOK("search", r); err != nil {
+	if err := p.expectOK("search", resp1); err != nil {
 		return nil, err
 	}
 
 	results := make([]config.SearchResult, len(resp.Web.Results))
 	for i, item := range resp.Web.Results {
 		results[i] = config.SearchResult{
-			Title:   item.Title,
-			URL:     item.URL,
-			Snippet: item.Description,
+			Title:         item.Title,
+			URL:           item.URL,
+			Snippet:       item.Description,
+			PublishedDate: item.PageAge,
 		}
 	}
 	return results, nil

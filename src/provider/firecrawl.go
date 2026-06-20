@@ -37,6 +37,7 @@ func (p *FirecrawlProvider) baseURL() string {
 type fcSearchRequest struct {
 	Query             string           `json:"query"`
 	Limit             int              `json:"limit,omitempty"`
+	TBS               string           `json:"tbs,omitempty"`
 	Sources           []string         `json:"sources,omitempty"`
 	IncludeDomains    []string         `json:"includeDomains,omitempty"`
 	ExcludeDomains    []string         `json:"excludeDomains,omitempty"`
@@ -108,10 +109,13 @@ type fcCrawlStatusResponse struct {
 
 // ---- Search ----
 
-func (p *FirecrawlProvider) Search(ctx context.Context, query string) ([]config.SearchResult, error) {
+func (p *FirecrawlProvider) SupportsTimeRange() bool { return true }
+
+func (p *FirecrawlProvider) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	body := fcSearchRequest{
 		Query:   query,
 		Limit:   10,
+		TBS:     googleTBS(opts.TimeRange),
 		Sources: []string{"web"},
 	}
 

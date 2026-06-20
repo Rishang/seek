@@ -9,6 +9,7 @@ import (
 
 	"github.com/rishang/seek/cache"
 	"github.com/rishang/seek/config"
+	"github.com/rishang/seek/logx"
 	"github.com/rishang/seek/provider"
 	"github.com/urfave/cli/v3"
 )
@@ -36,7 +37,7 @@ func main() {
 
 	store, err := setupCache()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cache disabled: %v\n", err)
+		logx.Warn("cache disabled: %v", err)
 	}
 	if store != nil {
 		defer store.Close()
@@ -55,7 +56,7 @@ func main() {
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		logx.Error("%v", err)
 		os.Exit(1)
 	}
 }
@@ -81,9 +82,12 @@ func searchCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "search",
 		Usage:     "Run a web search",
-		UsageText: "seek search [-p provider] <query>",
+		UsageText: "seek search [-p provider] [--start DD/MM/YYYY] [--end DD/MM/YYYY] [--range N] <query>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: firecrawl, tavily, spider.cloud, brave"),
+			providerFlag("Provider: firecrawl, tavily, spider.cloud, brave, exa"),
+			&cli.StringFlag{Name: "start", Usage: "Only results published on/after this date (DD/MM/YYYY)"},
+			&cli.StringFlag{Name: "end", Usage: "Only results published on/before this date (DD/MM/YYYY)"},
+			&cli.IntFlag{Name: "range", Usage: "Only results from the last N days (today back N days)"},
 			outputFlag,
 			noCacheFlag,
 		},
@@ -94,11 +98,22 @@ func searchCmd() *cli.Command {
 			query := cmd.Args().First()
 			applyNoCache(cmd)
 
-			sp, err := factory.Search(providerFor(cmd, cfg.Search.Provider))
+			opts, err := searchOptions(cmd)
 			if err != nil {
 				return err
 			}
-			results, err := sp.Search(ctx, query)
+
+			name := providerFor(cmd, cfg.Search.Provider)
+			sp, err := factory.Search(name)
+			if err != nil {
+				return err
+			}
+			if !opts.TimeRange.IsZero() {
+				if tr, ok := sp.(provider.TimeRangeSearcher); !ok || !tr.SupportsTimeRange() {
+					logx.Warn("provider %q does not support a search time range; ignoring --start/--end/--range", name)
+				}
+			}
+			results, err := sp.Search(ctx, query, opts)
 			if err != nil {
 				return err
 			}
@@ -107,13 +122,68 @@ func searchCmd() *cli.Command {
 	}
 }
 
+// dmyLayout is the date format accepted by --start and --end.
+const dmyLayout = "02/01/2006"
+
+// parseDMY parses a DD/MM/YYYY date.
+func parseDMY(s string) (time.Time, error) {
+	return time.Parse(dmyLayout, s)
+}
+
+// searchOptions builds the search-time options from the --start, --end, and
+// --range flags. --range sets both bounds (today back N days); explicit
+// --start/--end override the corresponding bound.
+func searchOptions(cmd *cli.Command) (config.SearchOptions, error) {
+	var tr config.TimeRange
+
+	if cmd.IsSet("range") {
+		n := int(cmd.Int("range"))
+		if n <= 0 {
+			return config.SearchOptions{}, fmt.Errorf("--range must be a positive number of days")
+		}
+		now := time.Now()
+		tr.Start = now.AddDate(0, 0, -n)
+		tr.End = now
+	}
+	if cmd.IsSet("start") {
+		t, err := parseDMY(cmd.String("start"))
+		if err != nil {
+			return config.SearchOptions{}, fmt.Errorf("invalid --start %q: expected DD/MM/YYYY", cmd.String("start"))
+		}
+		tr.Start = t
+	}
+	if cmd.IsSet("end") {
+		t, err := parseDMY(cmd.String("end"))
+		if err != nil {
+			return config.SearchOptions{}, fmt.Errorf("invalid --end %q: expected DD/MM/YYYY", cmd.String("end"))
+		}
+		tr.End = t
+	}
+	if !tr.Start.IsZero() && !tr.End.IsZero() && tr.End.Before(tr.Start) {
+		return config.SearchOptions{}, fmt.Errorf("--end (%s) is before --start (%s)",
+			tr.End.Format(dmyLayout), tr.Start.Format(dmyLayout))
+	}
+	if !tr.IsZero() {
+		logx.Debug("search time range: start=%s end=%s",
+			fmtDateOrOpen(tr.Start), fmtDateOrOpen(tr.End))
+	}
+	return config.SearchOptions{TimeRange: tr}, nil
+}
+
+func fmtDateOrOpen(t time.Time) string {
+	if t.IsZero() {
+		return "(open)"
+	}
+	return t.Format(dmyLayout)
+}
+
 func scrapeCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "scrape",
 		Usage:     "Extract content from a URL",
 		UsageText: "seek scrape [-p provider] [-f format] <url>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda"),
+			providerFlag("Provider: firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda, exa"),
 			&cli.StringFlag{
 				Name:    "format",
 				Aliases: []string{"f"},
@@ -188,7 +258,7 @@ func loadConfig() config.Config {
 	}
 	c, err := config.Load(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: config: %v\n", err)
+		logx.Warn("config: %v", err)
 		return config.Default()
 	}
 	return c
@@ -238,7 +308,7 @@ func ttlFor(c config.CacheConfig) time.Duration {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			return d
 		}
-		fmt.Fprintf(os.Stderr, "warning: invalid SEEK_CACHE_TTL %q, ignoring\n", v)
+		logx.Warn("invalid SEEK_CACHE_TTL %q, ignoring", v)
 	}
 	if d := c.TTL(); d > 0 {
 		return d
@@ -266,6 +336,7 @@ var providerEnv = []struct{ Name, Env string }{
 	{"webcrawlerapi", "WEBCRAWLERAPI_API_KEY"},
 	{"lightpanda", "LIGHTPANDA_API_KEY"},
 	{"brave", "BRAVE_API_KEY"},
+	{"exa", "EXA_API_KEY"},
 }
 
 // loadProviders builds the factory, taking each API key from provider.yaml and
@@ -273,7 +344,7 @@ var providerEnv = []struct{ Name, Env string }{
 func loadProviders() *provider.Factory {
 	creds, err := config.LoadProviders(providersPath())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: providers: %v\n", err)
+		logx.Warn("providers: %v", err)
 		creds = map[string]config.Credential{}
 	}
 

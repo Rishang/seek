@@ -42,6 +42,8 @@ func NewFactory(providers []config.ProviderConfig) *Factory {
 			f.providers[pc.Name] = NewLightpandaProvider(pc)
 		case "brave":
 			f.providers[pc.Name] = NewBraveProvider(pc)
+		case "exa":
+			f.providers[pc.Name] = NewExaProvider(pc)
 		default:
 			// Unknown provider; skip silently (caller can check existence).
 		}

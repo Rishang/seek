@@ -33,6 +33,7 @@ type spRequest struct {
 	Request      string `json:"request,omitempty"`       // "smart", "http", "chrome"
 	Metadata     bool   `json:"metadata,omitempty"`
 	Readability  bool   `json:"readability,omitempty"`
+	TBS          string `json:"tbs,omitempty"` // Google-style time filter
 }
 
 type spPage struct {
@@ -49,13 +50,16 @@ type spMetadata struct {
 
 // ---- Search ----
 
-func (p *SpiderProvider) Search(ctx context.Context, query string) ([]config.SearchResult, error) {
+func (p *SpiderProvider) SupportsTimeRange() bool { return true }
+
+func (p *SpiderProvider) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	body := spRequest{
 		Search:       query,
 		SearchLimit:  10,
 		ReturnFormat: "markdown",
 		Request:      "smart",
 		Metadata:     true,
+		TBS:          googleTBS(opts.TimeRange),
 	}
 
 	var pages []spPage

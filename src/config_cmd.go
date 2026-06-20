@@ -21,8 +21,8 @@ const readmeURL = "https://github.com/rishang/seek#readme"
 // Providers grouped by the capability they support. Reused by the config view
 // and the init flag validation.
 var (
-	searchProviders = []string{"firecrawl", "tavily", "spider.cloud", "brave"}
-	scrapeProviders = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi", "lightpanda"}
+	searchProviders = []string{"firecrawl", "tavily", "spider.cloud", "brave", "exa"}
+	scrapeProviders = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi", "lightpanda", "exa"}
 	crawlProviders  = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi"}
 )
 

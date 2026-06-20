@@ -32,6 +32,8 @@ type tvSearchRequest struct {
 	IncludeDomains    []string `json:"include_domains,omitempty"`
 	ExcludeDomains    []string `json:"exclude_domains,omitempty"`
 	Days              int      `json:"days,omitempty"`
+	StartDate         string   `json:"start_date,omitempty"` // YYYY-MM-DD
+	EndDate           string   `json:"end_date,omitempty"`   // YYYY-MM-DD
 }
 
 type tvSearchResponse struct {
@@ -43,11 +45,12 @@ type tvSearchResponse struct {
 }
 
 type tvResult struct {
-	Title      string  `json:"title"`
-	URL        string  `json:"url"`
-	Content    string  `json:"content"`
-	Score      float64 `json:"score"`
-	RawContent *string `json:"raw_content"`
+	Title         string  `json:"title"`
+	URL           string  `json:"url"`
+	Content       string  `json:"content"`
+	Score         float64 `json:"score"`
+	RawContent    *string `json:"raw_content"`
+	PublishedDate string  `json:"published_date"` // populated for news results
 }
 
 type tvExtractRequest struct {
@@ -101,11 +104,15 @@ type tvCrawlResult struct {
 
 // ---- Search ----
 
-func (p *TavilyProvider) Search(ctx context.Context, query string) ([]config.SearchResult, error) {
+func (p *TavilyProvider) SupportsTimeRange() bool { return true }
+
+func (p *TavilyProvider) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	body := tvSearchRequest{
 		Query:       query,
 		SearchDepth: "basic",
 		MaxResults:  10,
+		StartDate:   ymd(opts.TimeRange.Start),
+		EndDate:     ymd(opts.TimeRange.End),
 	}
 
 	var resp tvSearchResponse
@@ -116,9 +123,10 @@ func (p *TavilyProvider) Search(ctx context.Context, query string) ([]config.Sea
 	results := make([]config.SearchResult, len(resp.Results))
 	for i, item := range resp.Results {
 		results[i] = config.SearchResult{
-			Title:   item.Title,
-			URL:     item.URL,
-			Snippet: item.Content,
+			Title:         item.Title,
+			URL:           item.URL,
+			Snippet:       item.Content,
+			PublishedDate: item.PublishedDate,
 		}
 	}
 	return results, nil

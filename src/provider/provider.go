@@ -8,7 +8,14 @@ import (
 
 // SearchProvider performs web searches.
 type SearchProvider interface {
-	Search(ctx context.Context, query string) ([]config.SearchResult, error)
+	Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error)
+}
+
+// TimeRangeSearcher is implemented by search providers that honor
+// SearchOptions.TimeRange. The CLI checks this to warn when a requested time
+// range will be ignored by the selected provider.
+type TimeRangeSearcher interface {
+	SupportsTimeRange() bool
 }
 
 // ScrapeProvider extracts content from a single URL.

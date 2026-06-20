@@ -138,11 +138,27 @@ type ScrapeOptions struct {
 	OutputFormat ScrapeOutputFormat `yaml:"output_format,omitempty"`
 }
 
+// TimeRange is an inclusive published-date window for search results. A zero
+// Start or End leaves that bound open.
+type TimeRange struct {
+	Start time.Time
+	End   time.Time
+}
+
+// IsZero reports whether no time bound is set.
+func (t TimeRange) IsZero() bool { return t.Start.IsZero() && t.End.IsZero() }
+
+// SearchOptions carries optional parameters for a search request.
+type SearchOptions struct {
+	TimeRange TimeRange
+}
+
 // SearchResult represents a single result from a search provider.
 type SearchResult struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Snippet string `json:"snippet"`
+	Title         string `json:"title"`
+	URL           string `json:"url"`
+	Snippet       string `json:"snippet"`
+	PublishedDate string `json:"published_date,omitempty"`
 }
 
 // ScrapeResult holds the result of a scrape request.
