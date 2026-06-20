@@ -132,9 +132,9 @@ func (p *TavilyProvider) Search(ctx context.Context, query string, opts config.S
 	return results, nil
 }
 
-// ---- Scrape (Tavily Extract) ----
+// ---- Fetch (Tavily Extract) ----
 
-func (p *TavilyProvider) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (p *TavilyProvider) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
 	format := "markdown"
 	if opts.OutputFormat == config.FormatHTML {
 		format = "text" // Tavily doesn't have HTML output; use text
@@ -158,7 +158,7 @@ func (p *TavilyProvider) Scrape(ctx context.Context, url string, opts config.Scr
 		return nil, fmt.Errorf("tavily extract returned no results for %s", url)
 	}
 
-	return &config.ScrapeResult{
+	return &config.FetchResult{
 		URL:     url,
 		Content: resp.Results[0].RawContent,
 		Format:  string(opts.OutputFormat),
@@ -196,6 +196,6 @@ func (p *TavilyProvider) Crawl(ctx context.Context, url string) (*config.CrawlRe
 
 var (
 	_ SearchProvider = (*TavilyProvider)(nil)
-	_ ScrapeProvider = (*TavilyProvider)(nil)
+	_ FetchProvider = (*TavilyProvider)(nil)
 	_ CrawlProvider  = (*TavilyProvider)(nil)
 )

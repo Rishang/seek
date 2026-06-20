@@ -9,7 +9,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// FirecrawlProvider supports search, scrape, and crawl via firecrawl.
+// FirecrawlProvider supports search, fetch, and crawl via firecrawl.
 // Docs: https://docs.firecrawl.dev
 type FirecrawlProvider struct {
 	*httpClient
@@ -42,12 +42,18 @@ type fcSearchRequest struct {
 	IncludeDomains    []string         `json:"includeDomains,omitempty"`
 	ExcludeDomains    []string         `json:"excludeDomains,omitempty"`
 	IgnoreInvalidURLs bool             `json:"ignoreInvalidURLs,omitempty"`
-	ScrapeOptions     *fcScrapeOptions `json:"scrapeOptions,omitempty"`
+	FetchOptions     *fcFetchOptions `json:"scrapeOptions,omitempty"`
 }
 
 type fcSearchResponse struct {
-	Success bool           `json:"success"`
-	Data    []fcSearchItem `json:"data"`
+	Success bool         `json:"success"`
+	Data    fcSearchData `json:"data"`
+}
+
+// fcSearchData groups results by source (v2 returns an object, not a flat array).
+// We only request "web", so the other sources stay empty.
+type fcSearchData struct {
+	Web []fcSearchItem `json:"web"`
 }
 
 type fcSearchItem struct {
@@ -56,7 +62,7 @@ type fcSearchItem struct {
 	Description string `json:"description"`
 }
 
-type fcScrapeRequest struct {
+type fcFetchRequest struct {
 	URL             string   `json:"url"`
 	Formats         []string `json:"formats,omitempty"`
 	OnlyMainContent bool     `json:"onlyMainContent,omitempty"`
@@ -64,12 +70,12 @@ type fcScrapeRequest struct {
 	Timeout         int      `json:"timeout,omitempty"`
 }
 
-type fcScrapeResponse struct {
+type fcFetchResponse struct {
 	Success bool         `json:"success"`
-	Data    fcScrapeData `json:"data"`
+	Data    fcFetchData `json:"data"`
 }
 
-type fcScrapeData struct {
+type fcFetchData struct {
 	Markdown string     `json:"markdown"`
 	HTML     string     `json:"html"`
 	Metadata fcMetadata `json:"metadata"`
@@ -80,7 +86,7 @@ type fcMetadata struct {
 	Description string `json:"ogDescription"`
 }
 
-type fcScrapeOptions struct {
+type fcFetchOptions struct {
 	Formats         []string `json:"formats,omitempty"`
 	OnlyMainContent bool     `json:"onlyMainContent,omitempty"`
 }
@@ -93,7 +99,7 @@ type fcCrawlRequest struct {
 	ExcludePaths       []string         `json:"excludePaths,omitempty"`
 	AllowExternalLinks bool             `json:"allowExternalLinks,omitempty"`
 	AllowSubdomains    bool             `json:"allowSubdomains,omitempty"`
-	ScrapeOptions      *fcScrapeOptions `json:"scrapeOptions,omitempty"`
+	FetchOptions      *fcFetchOptions `json:"scrapeOptions,omitempty"`
 }
 
 type fcCrawlStartResponse struct {
@@ -104,7 +110,7 @@ type fcCrawlStartResponse struct {
 type fcCrawlStatusResponse struct {
 	Status string         `json:"status"`
 	Total  int            `json:"total"`
-	Data   []fcScrapeData `json:"data"`
+	Data   []fcFetchData `json:"data"`
 }
 
 // ---- Search ----
@@ -124,8 +130,8 @@ func (p *FirecrawlProvider) Search(ctx context.Context, query string, opts confi
 		return nil, err
 	}
 
-	results := make([]config.SearchResult, len(resp.Data))
-	for i, item := range resp.Data {
+	results := make([]config.SearchResult, len(resp.Data.Web))
+	for i, item := range resp.Data.Web {
 		results[i] = config.SearchResult{
 			Title:   item.Title,
 			URL:     item.URL,
@@ -135,23 +141,23 @@ func (p *FirecrawlProvider) Search(ctx context.Context, query string, opts confi
 	return results, nil
 }
 
-// ---- Scrape ----
+// ---- Fetch ----
 
-func (p *FirecrawlProvider) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (p *FirecrawlProvider) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
 	formats := []string{"markdown"}
 	if opts.OutputFormat == config.FormatHTML {
 		formats = []string{"html"}
 	}
 
-	body := fcScrapeRequest{
+	body := fcFetchRequest{
 		URL:             url,
 		Formats:         formats,
 		OnlyMainContent: true,
 		Timeout:         30000,
 	}
 
-	var resp fcScrapeResponse
-	if err := p.post(ctx, "scrape", p.baseURL()+"/v2/scrape", &body, &resp); err != nil {
+	var resp fcFetchResponse
+	if err := p.post(ctx, "fetch", p.baseURL()+"/v2/scrape", &body, &resp); err != nil {
 		return nil, err
 	}
 
@@ -159,7 +165,7 @@ func (p *FirecrawlProvider) Scrape(ctx context.Context, url string, opts config.
 	if content == "" {
 		content = resp.Data.HTML
 	}
-	return &config.ScrapeResult{
+	return &config.FetchResult{
 		URL:     url,
 		Content: content,
 		Format:  string(opts.OutputFormat),
@@ -174,7 +180,7 @@ func (p *FirecrawlProvider) Crawl(ctx context.Context, url string) (*config.Craw
 		URL:               url,
 		Limit:             100,
 		MaxDiscoveryDepth: 3,
-		ScrapeOptions: &fcScrapeOptions{
+		FetchOptions: &fcFetchOptions{
 			Formats:         []string{"markdown"},
 			OnlyMainContent: true,
 		},
@@ -223,6 +229,6 @@ func (p *FirecrawlProvider) Crawl(ctx context.Context, url string) (*config.Craw
 // Compile-time interface checks.
 var (
 	_ SearchProvider = (*FirecrawlProvider)(nil)
-	_ ScrapeProvider = (*FirecrawlProvider)(nil)
+	_ FetchProvider = (*FirecrawlProvider)(nil)
 	_ CrawlProvider  = (*FirecrawlProvider)(nil)
 )

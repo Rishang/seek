@@ -90,15 +90,27 @@ func SaveProviders(path string, creds map[string]Credential) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// Config is the top-level user configuration, nested under the "config" key in
-// config.yaml. Each operation carries its own provider, cache, and options.
+// Config is the top-level user configuration. The per-operation settings are
+// nested under the "config" key in config.yaml; Priority is the global "auto"
+// try-order, serialized under the sibling top-level "providers" key.
 type Config struct {
 	Search Operation `yaml:"search"`
-	Scrape Operation `yaml:"scrape"`
+	Fetch Operation `yaml:"fetch"`
 	Crawl  Operation `yaml:"crawl"`
+
+	// Priority is the global "auto" try-order (index 0 = highest priority),
+	// filtered to capable+configured providers at runtime. It lives under the
+	// top-level "providers.priority" key, not under "config", hence yaml:"-".
+	Priority []string `yaml:"-"`
 }
 
-// Operation configures a single capability (search, scrape, or crawl).
+// DefaultPriority is the built-in "auto" try-order, used when config.yaml does
+// not set providers.priority. Index 0 is highest priority.
+var DefaultPriority = []string{
+	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave",
+}
+
+// Operation configures a single capability (search, fetch, or crawl).
 type Operation struct {
 	Provider string      `yaml:"provider"`
 	Cache    CacheConfig `yaml:"cache,omitempty"`
@@ -119,23 +131,23 @@ func (c CacheConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 // default in that case).
 func (c CacheConfig) TTL() time.Duration { return time.Duration(c.TTLSecs) * time.Second }
 
-// Options carries per-operation tunables. Currently only scrape uses it.
+// Options carries per-operation tunables. Currently only fetch uses it.
 type Options struct {
-	OutputFormat ScrapeOutputFormat `yaml:"output_format,omitempty"`
+	OutputFormat FetchOutputFormat `yaml:"output_format,omitempty"`
 }
 
-// ScrapeOutputFormat controls the response format for scrape requests.
-type ScrapeOutputFormat string
+// FetchOutputFormat controls the response format for fetch requests.
+type FetchOutputFormat string
 
 const (
-	FormatJSON     ScrapeOutputFormat = "json"
-	FormatMarkdown ScrapeOutputFormat = "markdown"
-	FormatHTML     ScrapeOutputFormat = "html"
+	FormatJSON     FetchOutputFormat = "json"
+	FormatMarkdown FetchOutputFormat = "markdown"
+	FormatHTML     FetchOutputFormat = "html"
 )
 
-// ScrapeOptions carries optional parameters for a scrape request.
-type ScrapeOptions struct {
-	OutputFormat ScrapeOutputFormat `yaml:"output_format,omitempty"`
+// FetchOptions carries optional parameters for a fetch request.
+type FetchOptions struct {
+	OutputFormat FetchOutputFormat `yaml:"output_format,omitempty"`
 }
 
 // TimeRange is an inclusive published-date window for search results. A zero
@@ -161,11 +173,14 @@ type SearchResult struct {
 	PublishedDate string `json:"published_date,omitempty"`
 }
 
-// ScrapeResult holds the result of a scrape request.
-type ScrapeResult struct {
+// FetchResult holds the result of a fetch request.
+type FetchResult struct {
 	URL     string `json:"url"`
 	Content string `json:"content"`
 	Format  string `json:"format"`
+	// Cached reports whether this result was served from the cache. It is a
+	// transient signal for the caller (e.g. to log a hit), never serialized.
+	Cached bool `json:"-"`
 }
 
 // CrawlResult holds the result of a crawl request.
@@ -185,11 +200,13 @@ func Default() Config {
 		on := true
 		return CacheConfig{Enabled: &on, Store: "sqlite"}
 	}
-	// Caching applies to scrape and crawl only; search has no cache config.
+	// Caching applies to fetch and crawl only; search has no cache config.
 	return Config{
-		Search: Operation{Provider: "firecrawl"},
-		Scrape: Operation{Provider: "firecrawl", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
+		Search: Operation{Provider: "auto"},
+		Fetch: Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
+
+		Priority: append([]string(nil), DefaultPriority...),
 	}
 }
 
@@ -202,9 +219,17 @@ func DefaultPath() string {
 	return filepath.Join(home, ".seek", "config.yaml")
 }
 
-// file is the on-disk wrapper: the schema is nested under a top-level "config".
+// file is the on-disk wrapper: per-operation settings nest under "config", and
+// the global auto priority under "providers". (Provider credentials live in the
+// separate provider.yaml, not here.)
 type file struct {
-	Config Config `yaml:"config"`
+	Config    Config           `yaml:"config"`
+	Providers providersSection `yaml:"providers,omitempty"`
+}
+
+// providersSection is the top-level "providers" key in config.yaml.
+type providersSection struct {
+	Priority []string `yaml:"priority,omitempty"`
 }
 
 // Load reads config from path, overlaying any present fields onto Default(). A
@@ -222,13 +247,17 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &f); err != nil {
 		return f.Config, err
 	}
-	return f.Config, nil
+	c := f.Config
+	if len(f.Providers.Priority) > 0 {
+		c.Priority = f.Providers.Priority // config.yaml overrides the built-in default
+	}
+	return c, nil
 }
 
 // Save writes the config to path, nested under the top-level "config" key,
 // creating the parent directory as needed.
 func Save(path string, c Config) error {
-	data, err := marshalYAML(file{Config: c})
+	data, err := marshalYAML(file{Config: c, Providers: providersSection{Priority: c.Priority}})
 	if err != nil {
 		return err
 	}

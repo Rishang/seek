@@ -18,9 +18,9 @@ type TimeRangeSearcher interface {
 	SupportsTimeRange() bool
 }
 
-// ScrapeProvider extracts content from a single URL.
-type ScrapeProvider interface {
-	Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error)
+// FetchProvider extracts content from a single URL.
+type FetchProvider interface {
+	Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error)
 }
 
 // CrawlProvider crawls a website starting from a URL.
@@ -32,4 +32,17 @@ type CrawlProvider interface {
 // A concrete provider implements whichever interfaces it supports.
 type Provider interface {
 	Name() string
+}
+
+// Attempt records one provider tried by an auto chain. Err is nil for the
+// provider that served the result.
+type Attempt struct {
+	Provider string
+	Err      error
+}
+
+// AutoReporter is implemented by the auto meta-provider so the CLI can report
+// which provider served a request and why earlier ones failed.
+type AutoReporter interface {
+	Attempts() []Attempt
 }

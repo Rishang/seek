@@ -7,7 +7,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// LightpandaProvider supports scrape only, via Lightpanda's HTTP fetch API.
+// LightpandaProvider supports fetch only, via Lightpanda's HTTP fetch API.
 // Lightpanda is a headless browser; the cloud endpoint renders the page and
 // returns its content as html or markdown.
 //
@@ -47,9 +47,9 @@ type lpFetchResponse struct {
 	Status int    `json:"status"`
 }
 
-// Scrape renders targetURL and returns its content. Lightpanda only supports
+// Fetch renders targetURL and returns its content. Lightpanda only supports
 // html and markdown; any other requested format falls back to markdown.
-func (p *LightpandaProvider) Scrape(ctx context.Context, targetURL string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
+func (p *LightpandaProvider) Fetch(ctx context.Context, targetURL string, opts config.FetchOptions) (*config.FetchResult, error) {
 	format := "markdown"
 	if opts.OutputFormat == config.FormatHTML {
 		format = "html"
@@ -61,11 +61,11 @@ func (p *LightpandaProvider) Scrape(ctx context.Context, targetURL string, opts 
 		return nil, err
 	}
 
-	return &config.ScrapeResult{
+	return &config.FetchResult{
 		URL:     targetURL,
 		Content: resp.Data,
 		Format:  format,
 	}, nil
 }
 
-var _ ScrapeProvider = (*LightpandaProvider)(nil)
+var _ FetchProvider = (*LightpandaProvider)(nil)

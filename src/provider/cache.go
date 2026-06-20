@@ -9,30 +9,40 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// The decorators below transparently cache scrape and crawl results. A cache
+// The decorators below transparently cache fetch and crawl results. A cache
 // hit short-circuits the network call; a miss falls through and stores the
-// fresh result. Crawl results are JSON-encoded into the entry's content; scrape
+// fresh result. Crawl results are JSON-encoded into the entry's content; fetch
 // stores the raw page content with its format. (Search is not cached.)
 
-type cachingScrape struct {
-	ScrapeProvider
+type cachingFetch struct {
+	FetchProvider
 	store    cache.Store
 	provider string
 	ttl      time.Duration
 }
 
-func (c cachingScrape) Scrape(ctx context.Context, url string, opts config.ScrapeOptions) (*config.ScrapeResult, error) {
-	key := cache.Key{Op: "scrape", Provider: c.provider, URL: url, Format: string(opts.OutputFormat)}
+func (c cachingFetch) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
+	key := cache.Key{Op: "fetch", Provider: c.provider, URL: url, Format: string(opts.OutputFormat)}
 	if entry, ok, _ := c.store.Get(ctx, key); ok {
-		return &config.ScrapeResult{URL: url, Content: entry.Content, Format: entry.Format}, nil
+		return &config.FetchResult{URL: url, Content: entry.Content, Format: entry.Format, Cached: true}, nil
 	}
 
-	result, err := c.ScrapeProvider.Scrape(ctx, url, opts)
+	result, err := c.FetchProvider.Fetch(ctx, url, opts)
 	if err != nil {
 		return nil, err
 	}
 	_ = c.store.Set(ctx, key, result.Content, c.ttl)
 	return result, nil
+}
+
+// Attempts forwards the wrapped provider's auto attempts (nil when the wrapped
+// provider is not an auto meta-provider), so the CLI can report failover even
+// through the cache decorator.
+func (c cachingFetch) Attempts() []Attempt {
+	if ar, ok := c.FetchProvider.(AutoReporter); ok {
+		return ar.Attempts()
+	}
+	return nil
 }
 
 type cachingCrawl struct {
