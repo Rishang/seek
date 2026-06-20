@@ -101,6 +101,7 @@ type Config struct {
 // Operation configures a single capability (search, scrape, or crawl).
 type Operation struct {
 	Provider string      `yaml:"provider"`
+	Priority []string    `yaml:"priority,omitempty"` // optional auto try-order hint; reorders only, never restricts
 	Cache    CacheConfig `yaml:"cache,omitempty"`
 	Options  Options     `yaml:"options,omitempty"`
 }
@@ -187,8 +188,8 @@ func Default() Config {
 	}
 	// Caching applies to scrape and crawl only; search has no cache config.
 	return Config{
-		Search: Operation{Provider: "firecrawl"},
-		Scrape: Operation{Provider: "firecrawl", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
+		Search: Operation{Provider: "auto"},
+		Scrape: Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
 	}
 }

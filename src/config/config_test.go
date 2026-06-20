@@ -20,8 +20,8 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Search.Provider != "firecrawl" {
-		t.Fatalf("expected default provider firecrawl, got %q", cfg.Search.Provider)
+	if cfg.Search.Provider != "auto" {
+		t.Fatalf("expected default provider auto, got %q", cfg.Search.Provider)
 	}
 	if !cfg.Scrape.Cache.IsEnabled() {
 		t.Fatal("expected caching enabled by default")
@@ -62,7 +62,7 @@ config:
 	}
 
 	// Untouched operations keep their defaults; crawl caching stays enabled.
-	if cfg.Search.Provider != "firecrawl" {
+	if cfg.Search.Provider != "auto" {
 		t.Fatalf("search default not preserved: %+v", cfg.Search)
 	}
 	if cfg.Crawl.Provider != "firecrawl" || !cfg.Crawl.Cache.IsEnabled() {
