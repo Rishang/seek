@@ -2,29 +2,46 @@ package main
 
 import "testing"
 
-func TestAutoCandidatesPriorityFirstThenDefaults(t *testing.T) {
-	// priority pushes brave to the front; defaults fill the rest; no dups;
-	// "auto" itself is dropped.
-	got := autoCandidates("search", []string{"brave", "auto"})
-	if len(got) == 0 || got[0] != "brave" {
-		t.Fatalf("brave should lead, got %v", got)
-	}
-	seen := map[string]int{}
+func TestAutoCandidatesFiltersByCapabilityInPriorityOrder(t *testing.T) {
+	// Global priority lists providers across all capabilities; for "search" only
+	// search-capable ones survive, in priority order. webcrawlerapi/lightpanda
+	// are scrape/crawl-only and must be dropped.
+	priority := []string{"webcrawlerapi", "exa", "lightpanda", "brave", "auto", "exa"}
+	got := autoCandidates("search", priority)
+
 	for _, n := range got {
-		seen[n]++
 		if n == "auto" {
 			t.Fatalf("auto must not be a candidate: %v", got)
 		}
-	}
-	for n, c := range seen {
-		if c != 1 {
-			t.Fatalf("%q appears %d times: %v", n, c, got)
+		if !contains(searchProviders, n) {
+			t.Fatalf("%q is not search-capable but appeared: %v", n, got)
 		}
 	}
-	// every default search provider must be present somewhere
-	for _, n := range defaultAutoChains["search"] {
+	// Priority order respected for the capable, listed providers.
+	if len(got) < 2 || got[0] != "exa" || got[1] != "brave" {
+		t.Fatalf("expected exa then brave to lead, got %v", got)
+	}
+	// No duplicates.
+	seen := map[string]int{}
+	for _, n := range got {
+		seen[n]++
+		if seen[n] > 1 {
+			t.Fatalf("%q duplicated: %v", n, got)
+		}
+	}
+	// Safety net: every search-capable provider appears even if absent from priority.
+	for _, n := range searchProviders {
 		if seen[n] == 0 {
-			t.Fatalf("default %q missing from candidates %v", n, got)
+			t.Fatalf("capable provider %q missing from candidates %v", n, got)
 		}
 	}
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }

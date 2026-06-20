@@ -26,15 +26,6 @@ var (
 	crawlProviders  = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi"}
 )
 
-// defaultAutoChains is the built-in try-order ranking for the "auto" provider,
-// per operation. It ranks the providers the user has actually configured — it
-// does not decide membership. Must stay a subset of the per-capability lists
-// above. Not written to config.yaml by `seek config init`.
-var defaultAutoChains = map[string][]string{
-	"search": {"exa", "brave", "tavily", "firecrawl", "spider.cloud"},
-	"scrape": {"firecrawl", "spider.cloud", "lightpanda", "tavily", "exa", "webcrawlerapi"},
-}
-
 // providerHostDefaults lists the self-hostable (OSS) providers and the base URL
 // of their managed cloud. init prompts for a host for these, defaulting to the
 // cloud URL.
@@ -52,8 +43,9 @@ func configCmd() *cli.Command {
 			"  seek config init    Create or edit config and provider keys\n" +
 			"  seek config view    Show the effective configuration\n\n" +
 			"search and scrape default to `auto`: providers are tried in priority\n" +
-			"order until one returns a result. Set a `priority:` list per operation\n" +
-			"in config.yaml to reorder; membership comes from configured keys.\n\n" +
+			"order until one returns a result. Set a top-level `providers.priority`\n" +
+			"list in config.yaml to reorder (index 0 = highest); membership comes\n" +
+			"from configured keys.\n\n" +
 			"Docs: " + readmeURL,
 		Flags:  init.Flags,
 		Action: init.Action,
@@ -234,21 +226,15 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 
 	interactive := isatty.IsTerminal(os.Stdin.Fd()) && !anyInitFlagSet(cmd)
 	if interactive {
-		ok, err := runConfigForm(&c, cfgPath, cmd.Bool("yes"))
+		// One form, three stages (providers → keys → settings). Because it is a
+		// single huh form, shift+tab navigates back to any earlier step.
+		ok, err := runInitForm(&c, creds, cfgPath, cmd.Bool("yes"))
 		if err != nil {
 			return err
 		}
 		if !ok {
 			fmt.Println("Cancelled; no changes written.")
 			return nil
-		}
-		autoNames, err := gatherAutoMembership(c, creds)
-		if err != nil {
-			return err
-		}
-		names := mergeUnique(selectedProviders(c), autoNames)
-		if err := runCredsForm(creds, names); err != nil {
-			return err
 		}
 	} else {
 		if err := applyInitFlags(cmd, &c, creds); err != nil {
@@ -274,64 +260,202 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// selectedProviders returns the distinct real providers chosen across the
-// operations. "auto" is not a real provider and is dropped — auto membership is
-// gathered separately (see autoMembership).
-func selectedProviders(c config.Config) []string {
+// allProviderNames lists every known provider in declaration order.
+func allProviderNames() []string {
+	out := make([]string, len(providerEnv))
+	for i, p := range providerEnv {
+		out[i] = p.Name
+	}
+	return out
+}
+
+// configuredNames returns the providers that already have a key or host stored
+// in creds, in declaration order. Used to pre-check the select form.
+func configuredNames(creds map[string]config.Credential) []string {
 	var out []string
-	seen := map[string]bool{}
-	for _, name := range []string{c.Search.Provider, c.Scrape.Provider, c.Crawl.Provider} {
-		if name == "" || name == "auto" || seen[name] {
+	for _, p := range providerEnv {
+		if creds[p.Name].APIKey != "" || creds[p.Name].Host != "" {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+// filterConfigured keeps the capable providers (in capable order) that are
+// present in the configured set.
+func filterConfigured(capable, configured []string) []string {
+	set := make(map[string]bool, len(configured))
+	for _, n := range configured {
+		set[n] = true
+	}
+	var out []string
+	for _, n := range capable {
+		if set[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// pickDefault returns cur when it is among opts, else fallback. Keeps a form's
+// preselected value valid when the option set shrinks to configured providers.
+func pickDefault(cur string, opts []string, fallback string) string {
+	for _, o := range opts {
+		if o == cur {
+			return cur
+		}
+	}
+	return fallback
+}
+
+// runInitForm drives the whole interactive init as a single huh form so the
+// user can step backward (shift+tab) across every stage. Stages:
+//  1. multi-select which providers to configure (pre-checked from creds);
+//  2. a per-provider group (key, plus host for OSS providers) shown only while
+//     that provider is selected in stage 1;
+//  3. operation settings whose provider options are restricted, live, to the
+//     stage-1 selection (plus "auto"); then cache settings and overwrite confirm.
+//
+// It mutates c and creds in place and returns false when the user cancels.
+// ponytail: stage-3 options key off the *selected* set, not stored keys — a
+// provider picked but left blank still appears, which is fine (it just won't
+// resolve at runtime, and the user can step back to fill the key).
+func runInitForm(c *config.Config, creds map[string]config.Credential, path string, assumeYes bool) (bool, error) {
+	selected := configuredNames(creds)
+	selectedSet := func() map[string]bool {
+		m := make(map[string]bool, len(selected))
+		for _, n := range selected {
+			m[n] = true
+		}
+		return m
+	}
+
+	// Stage-2 bindings, pre-filled from existing creds. Built for every provider
+	// up front (stable pointers); groups are hidden unless the provider is picked.
+	keyVals := map[string]*string{}
+	hostVals := map[string]*string{}
+
+	// Stage-3 option lists: providers already configured (with stored creds),
+	// plus "auto". Static, so each select sizes to its own option count — an
+	// OptionsFunc would pin every select to a tall fixed-height viewport and
+	// leave large blank gaps. (On a first-time run nothing is configured yet, so
+	// search/scrape offer just "auto", which is the right default anyway.)
+	configured := configuredNames(creds)
+	searchOpts := append([]string{"auto"}, filterConfigured(searchProviders, configured)...)
+	scrapeOpts := append([]string{"auto"}, filterConfigured(scrapeProviders, configured)...)
+	crawlOpts := filterConfigured(crawlProviders, configured)
+	if len(crawlOpts) == 0 {
+		crawlOpts = crawlProviders // nothing configured supports crawl; offer the full list
+	}
+
+	// Stage-3 bindings, clamped to the option lists above.
+	searchP := pickDefault(orValue(c.Search.Provider, "auto"), searchOpts, "auto")
+	scrapeP := pickDefault(orValue(c.Scrape.Provider, "auto"), scrapeOpts, "auto")
+	crawlP := pickDefault(orValue(c.Crawl.Provider, crawlOpts[0]), crawlOpts, crawlOpts[0])
+	format := orValue(string(c.Scrape.Options.OutputFormat), "markdown")
+	scrapeCache := c.Scrape.Cache.IsEnabled()
+	crawlCache := c.Crawl.Cache.IsEnabled()
+	ttlDays := strconv.Itoa(effectiveTTLDays(c.Scrape.Cache))
+	confirm := true
+
+	// Stage 1: which providers to configure.
+	groups := []*huh.Group{
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Providers to configure").
+				Description("Select any number; enter their keys next. shift+tab steps back.").
+				Options(huh.NewOptions(allProviderNames()...)...).
+				Value(&selected),
+		),
+	}
+
+	// Stage 2: one hidden-until-selected group per provider.
+	for _, p := range providerEnv {
+		name := p.Name
+		k := creds[name].APIKey
+		keyVals[name] = &k
+		fields := []huh.Field{
+			huh.NewInput().Title(name + " API key").Description("leave blank to skip").
+				EchoMode(huh.EchoModePassword).Value(keyVals[name]),
+		}
+		if def, ok := providerHostDefaults[name]; ok {
+			h := orValue(creds[name].Host, def)
+			hostVals[name] = &h
+			fields = append(fields, huh.NewInput().Title(name+" host").Value(hostVals[name]))
+		}
+		groups = append(groups, huh.NewGroup(fields...).
+			WithHideFunc(func() bool { return !selectedSet()[name] }))
+	}
+
+	// Stage 3: settings.
+	groups = append(groups,
+		huh.NewGroup(
+			huh.NewSelect[string]().Title("Search provider").
+				Options(huh.NewOptions(searchOpts...)...).Value(&searchP),
+			huh.NewSelect[string]().Title("Scrape provider").
+				Options(huh.NewOptions(scrapeOpts...)...).Value(&scrapeP),
+			huh.NewSelect[string]().Title("Scrape output format").
+				Options(huh.NewOptions("markdown", "html", "json")...).Value(&format),
+			huh.NewSelect[string]().Title("Crawl provider").
+				Options(huh.NewOptions(crawlOpts...)...).Value(&crawlP),
+		),
+		huh.NewGroup(
+			huh.NewConfirm().Title("Cache scrape results?").Value(&scrapeCache),
+			huh.NewConfirm().Title("Cache crawl results?").Value(&crawlCache),
+			huh.NewInput().Title("Cache TTL (days)").Value(&ttlDays).
+				Validate(func(s string) error {
+					n, err := strconv.Atoi(strings.TrimSpace(s))
+					if err != nil || n <= 0 {
+						return fmt.Errorf("enter a positive whole number")
+					}
+					return nil
+				}),
+		),
+	)
+	if fileExists(path) && !assumeYes {
+		groups = append(groups, huh.NewGroup(
+			huh.NewConfirm().Title(fmt.Sprintf("Overwrite %s?", path)).Value(&confirm),
+		))
+	}
+
+	if err := huh.NewForm(groups...).Run(); err != nil {
+		if err == huh.ErrUserAborted {
+			return false, nil
+		}
+		return false, err
+	}
+	if !confirm {
+		return false, nil
+	}
+
+	// Write back keys/hosts for the selected providers only; deselected ones keep
+	// whatever was already stored (non-destructive).
+	sset := selectedSet()
+	for name, kv := range keyVals {
+		if !sset[name] {
 			continue
 		}
-		seen[name] = true
-		out = append(out, name)
-	}
-	return out
-}
-
-// autoMembership returns the capable providers for an op, in defaultAutoChains
-// order, used to populate the "which providers to set up for auto" multi-select.
-func autoMembership(op string, _ map[string]config.Credential) []string {
-	capable := map[string]bool{}
-	var all []string
-	switch op {
-	case "search":
-		all = searchProviders
-	case "scrape":
-		all = scrapeProviders
-	}
-	for _, n := range all {
-		capable[n] = true
-	}
-	var out []string
-	seen := map[string]bool{}
-	add := func(names []string) {
-		for _, n := range names {
-			if capable[n] && !seen[n] {
-				seen[n] = true
-				out = append(out, n)
-			}
+		cred := creds[name]
+		cred.APIKey = strings.TrimSpace(*kv)
+		if hv, ok := hostVals[name]; ok {
+			cred.Host = strings.TrimSpace(*hv)
 		}
+		creds[name] = cred
 	}
-	add(defaultAutoChains[op])
-	add(all)
-	return out
-}
 
-// mergeUnique concatenates name lists, preserving order and dropping duplicates.
-func mergeUnique(lists ...[]string) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, l := range lists {
-		for _, n := range l {
-			if n != "" && !seen[n] {
-				seen[n] = true
-				out = append(out, n)
-			}
-		}
+	// Write back settings. Each value was chosen from a static option list, so no
+	// post-hoc clamping is needed.
+	c.Search.Provider = searchP
+	c.Scrape.Provider = scrapeP
+	c.Crawl.Provider = crawlP
+	c.Scrape.Options.OutputFormat = parseFormat(format)
+	setCacheEnabled(&c.Scrape.Cache, scrapeCache)
+	setCacheEnabled(&c.Crawl.Cache, crawlCache)
+	if n, err := strconv.Atoi(strings.TrimSpace(ttlDays)); err == nil && n > 0 {
+		c.Scrape.Cache.TTLSecs = n * 86400
+		c.Crawl.Cache.TTLSecs = n * 86400
 	}
-	return out
+	return true, nil
 }
 
 func pruneEmptyCreds(creds map[string]config.Credential) {
@@ -416,164 +540,6 @@ func validateProvider(op, name string, allowed []string) error {
 func setCacheEnabled(c *config.CacheConfig, on bool) {
 	v := on
 	c.Enabled = &v
-}
-
-// runConfigForm drives the interactive settings TUI, mutating c. It returns
-// false when the user cancels.
-func runConfigForm(c *config.Config, path string, assumeYes bool) (bool, error) {
-	searchP := orValue(c.Search.Provider, "auto")
-	scrapeP := orValue(c.Scrape.Provider, "auto")
-	crawlP := orValue(c.Crawl.Provider, "firecrawl")
-	format := orValue(string(c.Scrape.Options.OutputFormat), "markdown")
-	scrapeCache := c.Scrape.Cache.IsEnabled()
-	crawlCache := c.Crawl.Cache.IsEnabled()
-	ttlDays := strconv.Itoa(effectiveTTLDays(c.Scrape.Cache))
-
-	confirm := true
-	groups := []*huh.Group{
-		huh.NewGroup(
-			huh.NewSelect[string]().Title("Search provider").
-				Options(huh.NewOptions(append([]string{"auto"}, searchProviders...)...)...).Value(&searchP),
-			huh.NewSelect[string]().Title("Scrape provider").
-				Options(huh.NewOptions(append([]string{"auto"}, scrapeProviders...)...)...).Value(&scrapeP),
-			huh.NewSelect[string]().Title("Scrape output format").
-				Options(huh.NewOptions("markdown", "html", "json")...).Value(&format),
-			huh.NewSelect[string]().Title("Crawl provider").
-				Options(huh.NewOptions(crawlProviders...)...).Value(&crawlP),
-		),
-		huh.NewGroup(
-			huh.NewConfirm().Title("Cache scrape results?").Value(&scrapeCache),
-			huh.NewConfirm().Title("Cache crawl results?").Value(&crawlCache),
-			huh.NewInput().Title("Cache TTL (days)").Value(&ttlDays).
-				Validate(func(s string) error {
-					n, err := strconv.Atoi(strings.TrimSpace(s))
-					if err != nil || n <= 0 {
-						return fmt.Errorf("enter a positive whole number")
-					}
-					return nil
-				}),
-		),
-	}
-	if fileExists(path) && !assumeYes {
-		groups = append(groups, huh.NewGroup(
-			huh.NewConfirm().Title(fmt.Sprintf("Overwrite %s?", path)).Value(&confirm),
-		))
-	}
-
-	if err := huh.NewForm(groups...).Run(); err != nil {
-		if err == huh.ErrUserAborted {
-			return false, nil
-		}
-		return false, err
-	}
-	if !confirm {
-		return false, nil
-	}
-
-	c.Search.Provider = searchP
-	c.Scrape.Provider = scrapeP
-	c.Crawl.Provider = crawlP
-	c.Scrape.Options.OutputFormat = parseFormat(format)
-	setCacheEnabled(&c.Scrape.Cache, scrapeCache)
-	setCacheEnabled(&c.Crawl.Cache, crawlCache)
-	if n, err := strconv.Atoi(strings.TrimSpace(ttlDays)); err == nil && n > 0 {
-		c.Scrape.Cache.TTLSecs = n * 86400
-		c.Crawl.Cache.TTLSecs = n * 86400
-	}
-	return true, nil
-}
-
-// gatherAutoMembership prompts (multi-select) for which providers to set up for
-// each op currently set to "auto", pre-checking those already configured. It
-// returns the union of picks. It writes nothing to config.yaml — provider.yaml
-// (the keys entered) is the source of auto membership.
-func gatherAutoMembership(c config.Config, creds map[string]config.Credential) ([]string, error) {
-	values := map[string]*[]string{}
-	var fields []huh.Field
-
-	addGroup := func(op, title, sel string) {
-		if sel != "auto" {
-			return
-		}
-		opts := autoMembership(op, creds)
-		var pre []string
-		for _, n := range opts {
-			if creds[n].APIKey != "" || creds[n].Host != "" {
-				pre = append(pre, n)
-			}
-		}
-		v := pre
-		values[op] = &v
-		fields = append(fields, huh.NewMultiSelect[string]().
-			Title(title).
-			Options(huh.NewOptions(opts...)...).
-			Value(values[op]))
-	}
-	addGroup("search", "Providers to set up for auto search", c.Search.Provider)
-	addGroup("scrape", "Providers to set up for auto scrape", c.Scrape.Provider)
-
-	if len(fields) == 0 {
-		return nil, nil
-	}
-	if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
-		if err == huh.ErrUserAborted {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	// Iterate ops in a fixed order so the credential prompts are deterministic
-	// (map iteration order would otherwise vary run to run).
-	var out []string
-	for _, op := range []string{"search", "scrape"} {
-		if vp, ok := values[op]; ok {
-			out = append(out, *vp...)
-		}
-	}
-	return out, nil
-}
-
-// runCredsForm prompts (masked) for the API key of each selected provider —
-// and, for self-hostable providers, the host base URL (defaulting to the cloud
-// URL) — pre-filling any values already in creds.
-func runCredsForm(creds map[string]config.Credential, names []string) error {
-	if len(names) == 0 {
-		return nil
-	}
-	keyVals := make(map[string]*string, len(names))
-	hostVals := make(map[string]*string)
-	fields := make([]huh.Field, 0, len(names))
-	for _, n := range names {
-		k := creds[n].APIKey
-		keyVals[n] = &k
-		fields = append(fields, huh.NewInput().
-			Title(n+" API key").
-			Description("leave blank to skip").
-			EchoMode(huh.EchoModePassword).
-			Value(keyVals[n]))
-
-		if def, ok := providerHostDefaults[n]; ok {
-			h := orValue(creds[n].Host, def)
-			hostVals[n] = &h
-			fields = append(fields, huh.NewInput().Title(n+" host").Value(hostVals[n]))
-		}
-	}
-
-	if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
-		if err == huh.ErrUserAborted {
-			return nil
-		}
-		return err
-	}
-	for n := range keyVals {
-		cred := creds[n]
-		cred.APIKey = strings.TrimSpace(*keyVals[n])
-		if hv, ok := hostVals[n]; ok {
-			cred.Host = strings.TrimSpace(*hv)
-		}
-		creds[n] = cred
-	}
-	return nil
 }
 
 func effectiveTTLDays(c config.CacheConfig) int {

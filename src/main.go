@@ -42,8 +42,8 @@ func providerFlag(usage string) *cli.StringFlag {
 func main() {
 	cfg = loadConfig()
 	factory = loadProviders()
-	factory.SetAutoChain("search", autoCandidates("search", cfg.Search.Priority))
-	factory.SetAutoChain("scrape", autoCandidates("scrape", cfg.Scrape.Priority))
+	factory.SetAutoChain("search", autoCandidates("search", cfg.Priority))
+	factory.SetAutoChain("scrape", autoCandidates("scrape", cfg.Priority))
 
 	store, err := setupCache()
 	if err != nil {
@@ -95,27 +95,50 @@ func providerFor(cmd *cli.Command, fallback string) string {
 	return fallback
 }
 
-// autoCandidates builds the ordered candidate list the "auto" provider draws
-// from for an operation: the optional config priority hint first, then the
-// built-in default ranking. Names are de-duplicated (first occurrence wins);
-// empties and "auto" are dropped. The factory filters this list to configured
-// + capable providers. defaultAutoChains is the full per-capability set (see
-// its doc), so no further fallback is needed.
+// autoCandidates returns the providers the "auto" meta-provider tries for op,
+// in priority order. priority is the global providers.priority list (a
+// config.yaml override or the built-in default); it is filtered to providers
+// capable of op. Any capable provider missing from the list is appended in
+// capability order, so a typo or omission never silently drops a usable
+// provider. Empties and "auto" are skipped; the factory further narrows the
+// result to providers that actually have credentials.
 func autoCandidates(op string, priority []string) []string {
+	capable := capabilityProviders(op)
+	isCapable := make(map[string]bool, len(capable))
+	for _, n := range capable {
+		isCapable[n] = true
+	}
+
 	var out []string
 	seen := map[string]bool{}
-	add := func(names []string) {
-		for _, n := range names {
-			if n == "" || n == "auto" || seen[n] {
-				continue
-			}
+	for _, n := range priority {
+		if n == "" || n == "auto" || seen[n] || !isCapable[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	for _, n := range capable { // safety net: capable providers not listed in priority
+		if !seen[n] {
 			seen[n] = true
 			out = append(out, n)
 		}
 	}
-	add(priority)
-	add(defaultAutoChains[op])
 	return out
+}
+
+// capabilityProviders returns the providers that support op, in their canonical
+// order (used as the priority fallback ordering).
+func capabilityProviders(op string) []string {
+	switch op {
+	case "search":
+		return searchProviders
+	case "scrape":
+		return scrapeProviders
+	case "crawl":
+		return crawlProviders
+	}
+	return nil
 }
 
 // logAutoAttempts surfaces auto-provider failover: a Warn per failed provider

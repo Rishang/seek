@@ -20,29 +20,43 @@ func TestDefaultUsesAutoForSearchAndScrape(t *testing.T) {
 	}
 }
 
-func TestPriorityOmittedWhenEmpty(t *testing.T) {
-	out, err := marshalYAML(file{Config: Default()})
-	if err != nil {
-		t.Fatal(err)
+func TestDefaultHasBuiltinPriority(t *testing.T) {
+	d := Default()
+	if len(d.Priority) != len(DefaultPriority) {
+		t.Fatalf("default priority: want %v, got %v", DefaultPriority, d.Priority)
 	}
-	if strings.Contains(string(out), "priority") {
-		t.Errorf("default config should not emit a priority key:\n%s", out)
+	for i, n := range DefaultPriority {
+		if d.Priority[i] != n {
+			t.Fatalf("default priority[%d]: want %q, got %q", i, n, d.Priority[i])
+		}
 	}
 }
 
-func TestPriorityRoundTrips(t *testing.T) {
+func TestSaveEmitsProvidersPriority(t *testing.T) {
+	out, err := marshalYAML(file{Config: Default(), Providers: providersSection{Priority: Default().Priority}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "providers:") || !strings.Contains(s, "priority:") {
+		t.Errorf("expected a top-level providers.priority block:\n%s", s)
+	}
+}
+
+func TestProvidersPriorityOverridesDefault(t *testing.T) {
 	const in = `
 config:
   search:
     provider: auto
-    priority: [brave, exa]
+providers:
+  priority: [brave, exa]
 `
 	var f file
 	if err := yaml.Unmarshal([]byte(in), &f); err != nil {
 		t.Fatal(err)
 	}
-	got := f.Config.Search.Priority
+	got := f.Providers.Priority
 	if len(got) != 2 || got[0] != "brave" || got[1] != "exa" {
-		t.Errorf("priority round-trip: got %v", got)
+		t.Errorf("providers.priority round-trip: got %v", got)
 	}
 }

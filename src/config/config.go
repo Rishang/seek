@@ -90,18 +90,29 @@ func SaveProviders(path string, creds map[string]Credential) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// Config is the top-level user configuration, nested under the "config" key in
-// config.yaml. Each operation carries its own provider, cache, and options.
+// Config is the top-level user configuration. The per-operation settings are
+// nested under the "config" key in config.yaml; Priority is the global "auto"
+// try-order, serialized under the sibling top-level "providers" key.
 type Config struct {
 	Search Operation `yaml:"search"`
 	Scrape Operation `yaml:"scrape"`
 	Crawl  Operation `yaml:"crawl"`
+
+	// Priority is the global "auto" try-order (index 0 = highest priority),
+	// filtered to capable+configured providers at runtime. It lives under the
+	// top-level "providers.priority" key, not under "config", hence yaml:"-".
+	Priority []string `yaml:"-"`
+}
+
+// DefaultPriority is the built-in "auto" try-order, used when config.yaml does
+// not set providers.priority. Index 0 is highest priority.
+var DefaultPriority = []string{
+	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave",
 }
 
 // Operation configures a single capability (search, scrape, or crawl).
 type Operation struct {
 	Provider string      `yaml:"provider"`
-	Priority []string    `yaml:"priority,omitempty"` // optional auto try-order hint; reorders only, never restricts
 	Cache    CacheConfig `yaml:"cache,omitempty"`
 	Options  Options     `yaml:"options,omitempty"`
 }
@@ -191,6 +202,8 @@ func Default() Config {
 		Search: Operation{Provider: "auto"},
 		Scrape: Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
+
+		Priority: append([]string(nil), DefaultPriority...),
 	}
 }
 
@@ -203,9 +216,17 @@ func DefaultPath() string {
 	return filepath.Join(home, ".seek", "config.yaml")
 }
 
-// file is the on-disk wrapper: the schema is nested under a top-level "config".
+// file is the on-disk wrapper: per-operation settings nest under "config", and
+// the global auto priority under "providers". (Provider credentials live in the
+// separate provider.yaml, not here.)
 type file struct {
-	Config Config `yaml:"config"`
+	Config    Config           `yaml:"config"`
+	Providers providersSection `yaml:"providers,omitempty"`
+}
+
+// providersSection is the top-level "providers" key in config.yaml.
+type providersSection struct {
+	Priority []string `yaml:"priority,omitempty"`
 }
 
 // Load reads config from path, overlaying any present fields onto Default(). A
@@ -223,13 +244,17 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &f); err != nil {
 		return f.Config, err
 	}
-	return f.Config, nil
+	c := f.Config
+	if len(f.Providers.Priority) > 0 {
+		c.Priority = f.Providers.Priority // config.yaml overrides the built-in default
+	}
+	return c, nil
 }
 
 // Save writes the config to path, nested under the top-level "config" key,
 // creating the parent directory as needed.
 func Save(path string, c Config) error {
-	data, err := marshalYAML(file{Config: c})
+	data, err := marshalYAML(file{Config: c, Providers: providersSection{Priority: c.Priority}})
 	if err != nil {
 		return err
 	}
