@@ -57,11 +57,31 @@ config:
     provider: firecrawl        # unchanged, single provider
 ```
 
+### Default priority chain (in code)
+
+The priority order for `auto` has a built-in default defined **in code**, not in
+config.yaml. config.yaml only carries an order when the user explicitly sets one
+to override the default.
+
+```go
+// defaultAutoChains is the built-in priority order per operation, used when an
+// op selects "auto" but sets no explicit `providers:` list. Tunable; not
+// written to config.yaml by `seek config init`.
+var defaultAutoChains = map[string][]string{
+	"search": {"exa", "brave", "tavily", "firecrawl", "spider.cloud"},
+	"scrape": {"firecrawl", "spider.cloud", "lightpanda", "tavily", "exa", "webcrawlerapi"},
+}
+```
+
+(Lives alongside the existing per-capability lists in `config_cmd.go`
+— `searchProviders` / `scrapeProviders` — which it must stay a subset of. The
+exact ordering above is a reasonable starting point and can be adjusted.)
+
 Chain resolution for an op when `provider: auto`:
 
-1. If `providers:` is set and non-empty → use it verbatim (in order).
-2. If `providers:` is absent/empty → fall back to the `providerEnv` order in
-   `main.go`, filtered to providers that support the operation's capability.
+1. If `providers:` is set and non-empty in config → use it verbatim (the user's
+   override, in order).
+2. Otherwise → use `defaultAutoChains[op]` (the built-in default priority).
 
 In both cases the chain is then filtered at attempt time to **configured**
 providers that support the capability (see "Configured becomes real").
@@ -71,8 +91,9 @@ providers that support the capability (see "Configured becomes real").
 - `Search.Provider = "auto"`
 - `Scrape.Provider = "auto"`
 - `Crawl.Provider = "firecrawl"` (unchanged)
-- No default `Providers` list is hard-coded; absence triggers the `providerEnv`
-  fallback, so a fresh install fails over across whatever keys the user has set.
+- `Providers` is left **nil/empty** for every op. The built-in
+  `defaultAutoChains` supplies the order; a fresh install fails over across
+  whatever providers the user has keys for.
 
 ## "Configured" becomes real
 
@@ -150,8 +171,10 @@ type AutoReporter interface {
 
 - `Factory` stores per-op chains: `chains map[string][]string` keyed by
   `"search"` / `"scrape"`. Populated from `main.go` after config load via a new
-  setter (e.g. `SetAutoChain(op string, names []string)`), since the factory is
-  built from credentials while chains come from `config.Config`.
+  setter (e.g. `SetAutoChain(op string, names []string)`). `main.go` resolves
+  each op's chain as: `cfg.<Op>.Providers` if non-empty, else
+  `defaultAutoChains[op]`. The factory then filters to configured/capable
+  providers when it builds the meta-provider.
 - `factory.Search("auto")` / `factory.Scrape("auto")`: detect the `"auto"` name,
   build the meta-provider (`autoSearch` / `autoScrape`) from the stored chain by
   resolving each name through the existing `capability[...]` helper (skipping
@@ -174,6 +197,27 @@ does not honor a requested time range. For `auto`:
 - Warn once only if **no** provider in the resolved chain implements
   `TimeRangeSearcher` / `SupportsTimeRange()`. If at least one does, suppress the
   eager warning (the actual server is not known until after the call).
+
+## `seek config init` behavior
+
+`init` manages the per-op `provider` field but **never** reads or writes the
+`providers:` chain — the priority order stays in code (`defaultAutoChains`) and
+is only present in config.yaml if a user hand-edits it.
+
+- The interactive selects and the `--search` / `--scrape` flags gain `"auto"` as
+  a selectable value (listed first, so it is the obvious default). `validateProvider`
+  must accept `"auto"` for search and scrape.
+- `init` leaves `Operation.Providers` untouched (nil). Because the field is
+  `omitempty`, a config written by `init` contains only `provider: auto` — no
+  chain — and resolution falls through to `defaultAutoChains`.
+- If a user has previously hand-added a `providers:` list, `init` loads the
+  existing config first (it already does this at `runConfigInit`), so re-running
+  `init` preserves that list rather than dropping it — it just never *creates* or
+  *edits* one itself.
+- `selectedProviders` (used to decide which API-key prompts to show) keys off the
+  `provider` field. When `provider: auto`, it should expand to the resolved chain
+  for that op so `init` prompts for the keys of the providers `auto` will use,
+  rather than prompting for a literal provider named "auto".
 
 ## Documentation & surface updates
 
@@ -199,8 +243,9 @@ does not honor a requested time range. For `auto`:
 
 ## Open behavior decisions (resolved)
 
-- Chain source: explicit per-op config list (`providers:`), fallback to
-  `providerEnv` order. ✔
+- Chain source: explicit per-op config list (`providers:`) overrides a built-in
+  default priority chain defined in code (`defaultAutoChains`). `seek config init`
+  never reads or writes the `providers:` list. ✔
 - Failover trigger: errors **and** empty results. ✔
 - Activation: `auto` is a selectable value **and** the new default for search +
   scrape. ✔
