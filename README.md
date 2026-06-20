@@ -39,7 +39,7 @@ This is where seek earns its keep. Most open-source-model agents have no built-i
 
 The skill encodes hard token-budget guards — snippets before scrapes, one page at a time, pipe large `llms.txt` indexes through `rg`, no `crawl` unless explicitly asked — so research stays cheap. Failover is invisible to the agent: it calls `seek search`, and whichever provider answers first wins.
 
-The CLI skill is the MVP — it targets terminal coding agents today. Next on the roadmap is **`seek mcp`**, an MCP server so any MCP-capable agent can leverage the same search/scrape/crawl loop without shelling out.
+The CLI skill is the MVP for terminal coding agents. seek also runs as a server for everything else: [`seek mcp`](#seek-mcp--mcp-server) speaks the Model Context Protocol over stdio so any MCP-capable agent can call the same search/scrape/crawl tools, and [`seek serve`](#seek-serve--http-api) exposes them as an HTTP+JSON API.
 
 ## Before / after
 
@@ -113,19 +113,55 @@ seek config init --search auto --key firecrawl=fc-xxx --key tavily=tvly-xxx --ye
 | `seek search <query>` | Web search across providers (`auto` by default). |
 | `seek scrape <url>` | Extract a page as markdown, html, or json. Prints the raw content. |
 | `seek crawl <url>` | Crawl a site and return its pages. |
+| `seek serve` | Run an HTTP API (JSON) for search/scrape/crawl, with Swagger docs at `/docs`. |
+| `seek mcp` | Run an MCP server over stdio so MCP-capable agents can call the same tools. |
 | `seek config init` | Create or edit `config.yaml` and provider keys — interactive form, or pass flags / pipe input for non-interactive mode. |
 | `seek config view` | Show the effective configuration and which API keys are set. |
 
 ### Flags
 
-Global: `-v, --verbose` prints debug logs (including each `auto` failover) to stderr.
+Global: `-v, --verbose` prints debug logs (including each `auto` failover, every HTTP request, and every MCP message) to stderr.
 
 | Command | Flags |
 |---------|-------|
 | `search` | `-p/--provider`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N` (last N days), `-o/--output json\|csv`, `--no-cache` |
 | `scrape` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o/--output json\|csv`, `--no-cache` |
+| `serve` | `--addr host:port` (default `127.0.0.1:8787`), `--token` (or `SEEK_SERVE_TOKEN`) |
 | `config init` | `--search`, `--scrape`, `--crawl`, `--format`, `--ttl <days>`, `--cache`, `--store`, `--key name=value`, `--host name=url`, `--path`, `-y/--yes` |
+
+## Serve & MCP
+
+Beyond the CLI, seek can run as a long-lived service so other programs and agents reuse the same providers and failover.
+
+### `seek serve` — HTTP API
+
+```bash
+seek serve --addr 127.0.0.1:8787 --token "$SEEK_SERVE_TOKEN"
+```
+
+JSON endpoints (each request is handled concurrently by `net/http`):
+
+```bash
+curl -s localhost:8787/search -H "Authorization: Bearer $TOKEN" \
+  -d '{"query":"rust async runtimes","range":7}'
+curl -s localhost:8787/scrape -H "Authorization: Bearer $TOKEN" \
+  -d '{"url":"https://go.dev","format":"markdown"}'
+curl -s localhost:8787/crawl  -H "Authorization: Bearer $TOKEN" \
+  -d '{"url":"https://go.dev/doc"}'
+```
+
+- `GET /healthz` — liveness check.
+- `GET /docs` — Swagger UI; `GET /openapi.json` — the OpenAPI 3 spec. Both are public; the operation endpoints require the token.
+- **Auth:** set `--token` (or `SEEK_SERVE_TOKEN`) to require `Authorization: Bearer <token>`. Without a token the API is **unauthenticated** — anyone who can reach the address can spend your provider keys, so only bind a tokenless server to loopback. seek warns at startup when no token is set.
+
+### `seek mcp` — MCP server
+
+```bash
+seek mcp
+```
+
+Speaks the Model Context Protocol over stdio (newline-delimited JSON-RPC 2.0): `initialize`, `tools/list`, `tools/call`. It exposes three tools — `search`, `scrape`, `crawl` — backed by the same provider factory and failover. Requests are handled concurrently; logs go to stderr so stdout stays a clean protocol channel. Point any MCP-capable agent at the `seek mcp` command.
 
 ## Providers
 

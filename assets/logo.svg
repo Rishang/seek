@@ -1,50 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="seek badger logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="seek badger logo">
   <title>seek</title>
 
-  <!-- backing disc: charcoal with a soft ring so it reads on light and dark -->
-  <circle cx="120" cy="120" r="112" fill="#1b1b20"/>
-  <circle cx="120" cy="120" r="112" fill="none" stroke="#41414a" stroke-width="3"/>
+  <!-- dark disc with a soft lighter rim -->
+  <circle cx="512" cy="512" r="500" fill="#3a3d45"/>
+  <circle cx="512" cy="512" r="486" fill="#17181c"/>
 
-  <!-- ears (behind the face), with pink inners -->
-  <circle cx="78" cy="74" r="17" fill="#d2d5db"/>
-  <circle cx="162" cy="74" r="17" fill="#d2d5db"/>
-  <circle cx="78" cy="74" r="8" fill="#ffc2cd"/>
-  <circle cx="162" cy="74" r="8" fill="#ffc2cd"/>
+  <!-- ears (behind the face): grey outer, pink inner -->
+  <circle cx="318" cy="332" r="106" fill="#cdd0d5"/>
+  <circle cx="706" cy="332" r="106" fill="#cdd0d5"/>
+  <circle cx="326" cy="352" r="58" fill="#f3a7af"/>
+  <circle cx="698" cy="352" r="58" fill="#f3a7af"/>
 
-  <!-- chubby white face -->
-  <path d="M120 56
-           C158 56 178 80 178 116
-           C178 156 152 188 120 188
-           C88 188 62 156 62 116
-           C62 80 82 56 120 56 Z"
-        fill="#f6f7f9"/>
+  <!-- white face -->
+  <path d="M512 252
+           C706 252 856 372 856 566
+           C856 766 706 910 512 948
+           C318 910 168 766 168 566
+           C168 372 318 252 512 252 Z"
+        fill="#f7f7f4"/>
 
-  <!-- blush cheeks -->
-  <ellipse cx="80" cy="138" rx="13" ry="8.5" fill="#ff9fb2" opacity="0.8"/>
-  <ellipse cx="160" cy="138" rx="13" ry="8.5" fill="#ff9fb2" opacity="0.8"/>
+  <!-- blush cheeks with little white ticks -->
+  <ellipse cx="286" cy="742" rx="58" ry="34" fill="#f4aab2"/>
+  <ellipse cx="738" cy="742" rx="58" ry="34" fill="#f4aab2"/>
+  <g stroke="#ffffff" stroke-width="7" stroke-linecap="round" opacity="0.9">
+    <path d="M262 752 l18 -22"/>
+    <path d="M286 758 l18 -22"/>
+    <path d="M310 752 l18 -22"/>
+    <path d="M714 752 l18 -22"/>
+    <path d="M738 758 l18 -22"/>
+    <path d="M762 752 l18 -22"/>
+  </g>
 
-  <!-- badger eye-stripes (the signature), softened -->
-  <path d="M96 60 C82 60 76 76 78 98 C80 122 88 140 100 150
-           C108 138 112 116 112 94 C112 72 108 60 96 60 Z" fill="#17171b"/>
-  <path d="M144 60 C158 60 164 76 162 98 C160 122 152 140 140 150
-           C132 138 128 116 128 94 C128 72 132 60 144 60 Z" fill="#17171b"/>
+  <!-- black eye-stripes (mirrored) + central forehead spike -->
+  <g fill="#16161a">
+    <path id="stripe" d="M500 300
+             C440 286 360 286 300 312
+             C250 392 250 506 286 614
+             C316 706 372 792 446 820
+             C476 724 470 612 470 556
+             C470 470 478 386 500 300 Z"/>
+    <use href="#stripe" transform="matrix(-1,0,0,1,1024,0)"/>
+    <path d="M476 286 C500 282 524 282 548 286
+             C540 332 528 362 512 380
+             C496 362 484 332 476 286 Z"/>
+  </g>
 
-  <!-- big cute eyes sitting in the stripes -->
-  <circle cx="95" cy="104" r="14" fill="#ffffff"/>
-  <circle cx="145" cy="104" r="14" fill="#ffffff"/>
-  <circle cx="96" cy="106" r="9" fill="#17171b"/>
-  <circle cx="146" cy="106" r="9" fill="#17171b"/>
-  <circle cx="100" cy="102" r="3.4" fill="#ffffff"/>
-  <circle cx="150" cy="102" r="3.4" fill="#ffffff"/>
-  <circle cx="92" cy="110" r="2" fill="#ffffff"/>
-  <circle cx="142" cy="110" r="2" fill="#ffffff"/>
+  <!-- big glossy eyes -->
+  <g>
+    <ellipse cx="404" cy="650" rx="66" ry="78" fill="#101012"/>
+    <ellipse cx="620" cy="650" rx="66" ry="78" fill="#101012"/>
+    <circle cx="384" cy="622" r="22" fill="#ffffff"/>
+    <circle cx="640" cy="622" r="22" fill="#ffffff"/>
+    <circle cx="420" cy="676" r="11" fill="#ffffff"/>
+    <circle cx="604" cy="676" r="11" fill="#ffffff"/>
+  </g>
 
-  <!-- little nose -->
-  <path d="M120 144 C131 144 134 154 127 161 C123 165 117 165 113 161
-           C106 154 109 144 120 144 Z" fill="#17171b"/>
-  <ellipse cx="116" cy="151" rx="3" ry="1.8" fill="#ffffff" opacity="0.55"/>
-
-  <!-- soft smile -->
-  <path d="M108 168 Q120 179 132 168" fill="none" stroke="#17171b"
-        stroke-width="3.2" stroke-linecap="round"/>
+  <!-- nose, philtrum and smile -->
+  <path d="M512 766
+           C556 766 582 786 582 812
+           C582 842 548 864 512 876
+           C476 864 442 842 442 812
+           C442 786 468 766 512 766 Z"
+        fill="#101012"/>
+  <ellipse cx="492" cy="792" rx="13" ry="8" fill="#ffffff" opacity="0.6"/>
+  <path d="M512 876 L512 904" fill="none" stroke="#101012" stroke-width="7" stroke-linecap="round"/>
+  <path d="M460 900 Q489 930 512 914 Q535 930 564 900"
+        fill="none" stroke="#101012" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

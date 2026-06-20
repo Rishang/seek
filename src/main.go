@@ -68,6 +68,8 @@ func main() {
 			searchCmd(),
 			scrapeCmd(),
 			crawlCmd(),
+			serveCmd(),
+			mcpCmd(),
 			configCmd(),
 		},
 	}
@@ -214,34 +216,16 @@ func parseDMY(s string) (time.Time, error) {
 // --range flags. --range sets both bounds (today back N days); explicit
 // --start/--end override the corresponding bound.
 func searchOptions(cmd *cli.Command) (config.SearchOptions, error) {
-	var tr config.TimeRange
-
+	rangeDays := 0
 	if cmd.IsSet("range") {
-		n := int(cmd.Int("range"))
-		if n <= 0 {
+		rangeDays = int(cmd.Int("range"))
+		if rangeDays <= 0 {
 			return config.SearchOptions{}, fmt.Errorf("--range must be a positive number of days")
 		}
-		now := time.Now()
-		tr.Start = now.AddDate(0, 0, -n)
-		tr.End = now
 	}
-	if cmd.IsSet("start") {
-		t, err := parseDMY(cmd.String("start"))
-		if err != nil {
-			return config.SearchOptions{}, fmt.Errorf("invalid --start %q: expected DD/MM/YYYY", cmd.String("start"))
-		}
-		tr.Start = t
-	}
-	if cmd.IsSet("end") {
-		t, err := parseDMY(cmd.String("end"))
-		if err != nil {
-			return config.SearchOptions{}, fmt.Errorf("invalid --end %q: expected DD/MM/YYYY", cmd.String("end"))
-		}
-		tr.End = t
-	}
-	if !tr.Start.IsZero() && !tr.End.IsZero() && tr.End.Before(tr.Start) {
-		return config.SearchOptions{}, fmt.Errorf("--end (%s) is before --start (%s)",
-			tr.End.Format(dmyLayout), tr.Start.Format(dmyLayout))
+	tr, err := buildTimeRange(rangeDays, cmd.String("start"), cmd.String("end"))
+	if err != nil {
+		return config.SearchOptions{}, err
 	}
 	if !tr.IsZero() {
 		logx.Debug("search time range: start=%s end=%s",
