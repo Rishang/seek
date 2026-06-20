@@ -51,6 +51,9 @@ func configCmd() *cli.Command {
 		Description: "Configure seek. With no subcommand this runs `init`.\n\n" +
 			"  seek config init    Create or edit config and provider keys\n" +
 			"  seek config view    Show the effective configuration\n\n" +
+			"search and scrape default to `auto`: providers are tried in priority\n" +
+			"order until one returns a result. Set a `priority:` list per operation\n" +
+			"in config.yaml to reorder; membership comes from configured keys.\n\n" +
 			"Docs: " + readmeURL,
 		Flags:  init.Flags,
 		Action: init.Action,

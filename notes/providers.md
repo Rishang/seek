@@ -6,6 +6,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 ## Contents
 
 - [Capability matrix](#capability-matrix)
+- [The `auto` provider](#the-auto-provider-search--scrape)
 - [Providers](#providers)
   - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa)
 - [Auth](#auth)
@@ -28,6 +29,39 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 
 Capability = which of `SearchProvider` / `ScrapeProvider` / `CrawlProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
+
+## The `auto` provider (search & scrape)
+
+`auto` is a meta-provider (`provider/auto.go`) that tries configured providers in
+priority order and returns the first non-empty result, failing over on either an
+error or an empty result. It is the default for `search` and `scrape`. Crawl does
+not support it.
+
+- **Membership** comes from provider.yaml (plus env overrides): every provider you
+  have a key/host for, that supports the operation, is in the chain. There is no
+  provider list in config.yaml — adding a key is the only step needed to include a
+  provider. The factory only builds providers that are configured
+  (`NewFactory` skips entries with no key and no host), so unconfigured names are
+  filtered out of the chain automatically.
+- **Order** is the built-in `defaultAutoChains` ranking (in `config_cmd.go`),
+  optionally reordered by an additive per-op `priority:` hint in config.yaml. The
+  hint only moves listed providers to the front; unlisted-but-configured providers
+  still run, after them. `main.go`'s `autoCandidates` composes the final order as
+  `priority` ++ `defaultAutoChains[op]` ++ `providerEnv` order, de-duplicated.
+- On total failure `auto` returns an aggregated error naming every attempt.
+- `SEEK_LOG=debug` shows which provider served (`auto: served by …`); failovers log
+  at `warn`. The trail is exposed via the `AutoReporter` interface and logged from
+  `main.go` (never from `provider/`).
+- `seek config init` never writes `priority:`; when an op is `auto` it multi-selects
+  which providers to set up keys for, and those keys (in provider.yaml) are the
+  membership.
+
+Example config.yaml priority hint:
+
+    config:
+      search:
+        provider: auto
+        priority: [brave, exa]
 
 ## Providers
 
@@ -156,4 +190,5 @@ So a docs/landing page with no date, or a general (non-news) tavily query, yield
 3. Add `SupportsTimeRange() bool` if it honors a date window.
 4. Register the `case` in `factory.go`; add the env var to `providerEnv` in `main.go`.
 5. Add it to the provider lists in `config_cmd.go` and the usage strings in `main.go`.
-6. Document the upstream API in `.idea/providers.md` and add a row here.
+6. If it supports search or scrape, add it to `defaultAutoChains` (`config_cmd.go`) so the `auto` provider ranks it.
+7. Document the upstream API in `.idea/providers.md` and add a row here.
