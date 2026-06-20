@@ -57,6 +57,12 @@ func main() {
 		defer store.Close()
 	}
 
+	// The default cli version flag aliases -v, which we already use for
+	// --verbose. cli/v3 silently drops the version flag on that collision, so
+	// expose it under --version only — otherwise the -ldflags build version
+	// (see Taskfile build:release) would be unreachable.
+	cli.VersionFlag = &cli.BoolFlag{Name: "version", Usage: "Print the seek version"}
+
 	cmd := &cli.Command{
 		Name:        "seek",
 		Version:     version,

@@ -51,6 +51,18 @@ Two integration paths, pick the one your agent speaks:
 
 Exact registration differs per agent, but it's always one of: "add a skill file" or "add an MCP server whose command is `seek mcp`."
 
+### Let the agent do it
+
+seek is for coding agents, so the fastest setup is to let one wire it up. Point your agent at this README and ask:
+
+```bash
+opencode "install seek and add its skill — ref: https://github.com/Rishang/seek/blob/main/README.md"
+# works the same for any agent that can read a URL and run shell:
+claude "read https://github.com/Rishang/seek/blob/main/README.md, then install seek and register its web-fetch skill"
+```
+
+The agent reads the install steps above, runs the install script (or `mise`/`ubi`), drops `skills/SKILL.md` into its skills folder or registers `seek mcp`, and reports back. You just provide the provider keys (`seek config init`).
+
 ## Why not just give the agent a provider SDK?
 
 Because keys rate-limit and die mid-task, and one SDK is one point of failure. Wiring a fallback yourself means two SDKs, two auth flows, a try/catch, and a normalization layer to make their responses line up — then teaching the agent all of it.
@@ -104,8 +116,8 @@ This is the human part — do it once, then hand seek to the agent. Pick whichev
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/install.sh | sh
-# pin a version or install dir:
-#   SEEK_VERSION=v0.1.0 SEEK_BIN_DIR=~/.local/bin sh -c "$(curl -fsSL .../install.sh)"
+# pin a version or install dir (env vars on the right of the pipe):
+curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/install.sh | SEEK_VERSION=v0.1.0 SEEK_BIN_DIR=~/.local/bin sh
 ```
 
 **[mise](https://mise.jdx.dev)** (installs the GitHub release binary via its `ubi` backend):

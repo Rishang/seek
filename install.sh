@@ -54,8 +54,11 @@ if [ "$VERSION" = "latest" ]; then
 fi
 say "installing seek $VERSION ($OS/$ARCH)"
 
-# --- download + verify ----------------------------------------------------
-asset="seek_${VERSION}_${OS}_${ARCH}.tar.gz"
+# --- download + extract ---------------------------------------------------
+# Asset name and inner binary name mirror .github/workflows/release.yml:
+#   archive: seek-<tag>-<os>-<arch>.tar.gz   inner binary: seek-<os>-<arch>
+asset="seek-${VERSION}-${OS}-${ARCH}.tar.gz"
+binname="seek-${OS}-${ARCH}"
 base="https://github.com/$REPO/releases/download/$VERSION"
 
 tmp=$(mktemp -d)
@@ -64,29 +67,13 @@ trap 'rm -rf "$tmp"' EXIT
 say "downloading $asset"
 dl "$base/$asset" "$tmp/$asset" || err "download failed: $base/$asset"
 
-# Verify sha256 against checksums.txt when a hasher is available.
-if dl "$base/checksums.txt" "$tmp/checksums.txt" 2>/dev/null; then
-  want=$(grep " $asset\$" "$tmp/checksums.txt" 2>/dev/null | awk '{print $1}' || true)
-  if [ -n "$want" ]; then
-    if have sha256sum; then
-      got=$(sha256sum "$tmp/$asset" | awk '{print $1}')
-    elif have shasum; then
-      got=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
-    else
-      got=""
-    fi
-    if [ -n "$got" ]; then
-      [ "$got" = "$want" ] || err "checksum mismatch for $asset"
-      say "checksum ok"
-    fi
-  fi
-else
-  say "warning: no checksums.txt found, skipping verification"
-fi
+# ponytail: the release workflow ships no checksums.txt, so there is nothing to
+# verify against — GitHub serves the asset over TLS. Add a checksums step to
+# release.yml (and verification here) if you want end-to-end integrity.
 
 tar -xzf "$tmp/$asset" -C "$tmp" || err "extract failed"
-[ -f "$tmp/seek" ] || err "archive did not contain a 'seek' binary"
-chmod +x "$tmp/seek"
+[ -f "$tmp/$binname" ] || err "archive did not contain '$binname'"
+chmod +x "$tmp/$binname"
 
 # --- choose install dir ---------------------------------------------------
 if [ -n "${SEEK_BIN_DIR:-}" ]; then
@@ -98,11 +85,11 @@ else
 fi
 mkdir -p "$BIN_DIR"
 
-if mv "$tmp/seek" "$BIN_DIR/seek" 2>/dev/null; then
+if mv "$tmp/$binname" "$BIN_DIR/seek" 2>/dev/null; then
   :
 elif have sudo && [ "$BIN_DIR" = /usr/local/bin ]; then
   say "writing to $BIN_DIR via sudo"
-  sudo mv "$tmp/seek" "$BIN_DIR/seek"
+  sudo mv "$tmp/$binname" "$BIN_DIR/seek"
 else
   err "cannot write to $BIN_DIR (set SEEK_BIN_DIR to a writable dir)"
 fi
