@@ -245,7 +245,10 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 	fmt.Printf("Wrote %s\n", cfgPath)
 
 	pruneEmptyCreds(creds)
-	if len(creds) > 0 {
+	// Save when there are creds to write, or when a file already exists so that
+	// removals (e.g. de-selecting providers in the form) are persisted even when
+	// the last provider was dropped.
+	if len(creds) > 0 || fileExists(provPath) {
 		if err := config.SaveProviders(provPath, creds); err != nil {
 			return err
 		}
@@ -404,20 +407,12 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 		return false, nil
 	}
 
-	// Write back keys/hosts for the selected providers only; deselected ones keep
-	// whatever was already stored (non-destructive).
-	sset := selectedSet()
-	for name, kv := range keyVals {
-		if !sset[name] {
-			continue
-		}
-		cred := creds[name]
-		cred.APIKey = strings.TrimSpace(*kv)
-		if hv, ok := hostVals[name]; ok {
-			cred.Host = strings.TrimSpace(*hv)
-		}
-		creds[name] = cred
-	}
+	// Write back credentials based on the stage-1 selection. The multi-select is
+	// pre-checked from existing creds, so a provider left selected keeps/updates
+	// its key, while a de-selected one is dropped from provider.yaml entirely
+	// (de-select == "remove this provider"). Empty selected entries are pruned
+	// later by pruneEmptyCreds.
+	applyProviderSelection(creds, selectedSet(), keyVals, hostVals)
 
 	// Write back settings. Each value was chosen from a static option list, so no
 	// post-hoc clamping is needed.
@@ -439,6 +434,25 @@ func pruneEmptyCreds(creds map[string]config.Credential) {
 		if c.APIKey == "" && c.Host == "" {
 			delete(creds, name)
 		}
+	}
+}
+
+// applyProviderSelection writes the form's key/host inputs back into creds.
+// Providers in selected are upserted from keyVals/hostVals; providers not in
+// selected are removed entirely, so de-selecting a provider in the init form
+// drops its stored credential.
+func applyProviderSelection(creds map[string]config.Credential, selected map[string]bool, keyVals, hostVals map[string]*string) {
+	for name, kv := range keyVals {
+		if !selected[name] {
+			delete(creds, name)
+			continue
+		}
+		cred := creds[name]
+		cred.APIKey = strings.TrimSpace(*kv)
+		if hv, ok := hostVals[name]; ok {
+			cred.Host = strings.TrimSpace(*hv)
+		}
+		creds[name] = cred
 	}
 }
 

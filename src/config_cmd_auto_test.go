@@ -45,6 +45,41 @@ func TestPickDefaultFallsBackWhenInvalid(t *testing.T) {
 	}
 }
 
+// TestApplyProviderSelectionDropsDeselected verifies that de-selecting a
+// provider in the init form removes its stored credential, while selected
+// providers are upserted from the form inputs.
+func TestApplyProviderSelectionDropsDeselected(t *testing.T) {
+	creds := map[string]config.Credential{
+		"exa":        {APIKey: "old-exa"},
+		"brave":      {APIKey: "old-brave"}, // will be de-selected -> dropped
+		"lightpanda": {Host: "https://old"}, // host-only, de-selected -> dropped
+	}
+	str := func(s string) *string { return &s }
+	keyVals := map[string]*string{
+		"exa":        str("new-exa"),
+		"brave":      str("old-brave"),
+		"lightpanda": str(""),
+		"tavily":     str("new-tavily"), // newly selected
+	}
+	hostVals := map[string]*string{"lightpanda": str("https://old")}
+	selected := map[string]bool{"exa": true, "tavily": true}
+
+	applyProviderSelection(creds, selected, keyVals, hostVals)
+
+	if creds["exa"].APIKey != "new-exa" {
+		t.Errorf("exa key should be updated, got %q", creds["exa"].APIKey)
+	}
+	if creds["tavily"].APIKey != "new-tavily" {
+		t.Errorf("tavily should be added, got %q", creds["tavily"].APIKey)
+	}
+	if _, ok := creds["brave"]; ok {
+		t.Error("de-selected brave should be dropped")
+	}
+	if _, ok := creds["lightpanda"]; ok {
+		t.Error("de-selected lightpanda should be dropped")
+	}
+}
+
 // TestKeyGroupHideClosuresCaptureName replicates runInitForm's per-provider
 // hide-func construction to guard against a closure-capture regression (every
 // closure seeing the last loop value), which would make init prompt for the
