@@ -27,8 +27,6 @@ func NewLightpandaProvider(cfg config.ProviderConfig) *LightpandaProvider {
 	}
 }
 
-func (p *LightpandaProvider) Name() string { return "lightpanda" }
-
 func (p *LightpandaProvider) fetchURL() string {
 	base := p.host
 	if base == "" {

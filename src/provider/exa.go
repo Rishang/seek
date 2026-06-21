@@ -23,8 +23,6 @@ func NewExaProvider(cfg config.ProviderConfig) *ExaProvider {
 	return &ExaProvider{httpClient: newHTTPClient("exa", cfg.APIKey)}
 }
 
-func (p *ExaProvider) Name() string { return "exa" }
-
 // ---- request / response types ----
 
 // exaContents controls what page material Exa returns per result.
@@ -132,5 +130,5 @@ func (p *ExaProvider) Fetch(ctx context.Context, url string, opts config.FetchOp
 // Compile-time interface checks.
 var (
 	_ SearchProvider = (*ExaProvider)(nil)
-	_ FetchProvider = (*ExaProvider)(nil)
+	_ FetchProvider  = (*ExaProvider)(nil)
 )

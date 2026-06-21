@@ -28,11 +28,10 @@ type CrawlProvider interface {
 	Crawl(ctx context.Context, url string) (*config.CrawlResult, error)
 }
 
-// Provider composes the optional capabilities a provider may offer.
-// A concrete provider implements whichever interfaces it supports.
-type Provider interface {
-	Name() string
-}
+// Provider is any registered provider. The concrete capabilities (search,
+// fetch, crawl) are probed by type-asserting to the interfaces above, so a
+// provider need only implement whichever it supports.
+type Provider = any
 
 // Attempt records one provider tried by an auto chain. Err is nil for the
 // provider that served the result.

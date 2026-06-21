@@ -74,7 +74,7 @@ func runServe(ctx context.Context, addr, token string) error {
 		_ = srv.Shutdown(shutCtx)
 	}()
 
-	fmt.Fprintf(os.Stderr, "seek serve: listening on http://%s (docs at /docs)\n", addr)
+	fmt.Fprintf(os.Stderr, "seek serve: listening on http://%s\n", addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -91,10 +91,6 @@ func serveMux(token string) http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
-	// API docs are public (they expose no secrets); the endpoints themselves
-	// still require the token. /docs renders Swagger UI against /openapi.json.
-	mux.HandleFunc("GET /openapi.json", handleOpenAPI)
-	mux.HandleFunc("GET /docs", handleSwaggerUI)
 	return withLogging(mux)
 }
 

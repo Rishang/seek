@@ -21,8 +21,6 @@ func NewBraveProvider(cfg config.ProviderConfig) *BraveProvider {
 	return &BraveProvider{httpClient: newHTTPClient("brave", cfg.APIKey)}
 }
 
-func (p *BraveProvider) Name() string { return "brave" }
-
 // ---- response types ----
 
 type braveSearchResponse struct {

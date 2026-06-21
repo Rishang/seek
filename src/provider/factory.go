@@ -10,7 +10,7 @@ import (
 
 // opCache holds the cache settings for a single operation.
 type opCache struct {
-	store cache.Store
+	store *cache.Store
 	ttl   time.Duration
 }
 
@@ -44,7 +44,7 @@ func NewFactory(providers []config.ProviderConfig) *Factory {
 
 // SetCache enables caching for a single operation ("search", "fetch", or
 // "crawl") using the given store and TTL.
-func (f *Factory) SetCache(op string, store cache.Store, ttl time.Duration) {
+func (f *Factory) SetCache(op string, store *cache.Store, ttl time.Duration) {
 	f.caches[op] = opCache{store: store, ttl: ttl}
 }
 

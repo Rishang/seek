@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func newTestStore(t *testing.T) Store {
+func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	store, err := OpenSQLite(filepath.Join(t.TempDir(), "cache.db"))
 	if err != nil {

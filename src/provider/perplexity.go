@@ -30,8 +30,6 @@ func NewPerplexityProvider(cfg config.ProviderConfig) *PerplexityProvider {
 	return &PerplexityProvider{httpClient: newHTTPClient("perplexity", cfg.APIKey)}
 }
 
-func (p *PerplexityProvider) Name() string { return "perplexity" }
-
 // ---- request / response types ----
 
 type pplxSearchRequest struct {

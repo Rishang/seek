@@ -16,7 +16,7 @@ import (
 
 type cachingFetch struct {
 	FetchProvider
-	store    cache.Store
+	store    *cache.Store
 	provider string
 	ttl      time.Duration
 }
@@ -47,7 +47,7 @@ func (c cachingFetch) Attempts() []Attempt {
 
 type cachingCrawl struct {
 	CrawlProvider
-	store    cache.Store
+	store    *cache.Store
 	provider string
 	ttl      time.Duration
 }

@@ -23,8 +23,6 @@ func NewFirecrawlProvider(cfg config.ProviderConfig) *FirecrawlProvider {
 	}
 }
 
-func (p *FirecrawlProvider) Name() string { return "firecrawl" }
-
 func (p *FirecrawlProvider) baseURL() string {
 	if p.host != "" {
 		return strings.TrimRight(p.host, "/")
@@ -35,14 +33,14 @@ func (p *FirecrawlProvider) baseURL() string {
 // ---- request / response types (Firecrawl v2) ----
 
 type fcSearchRequest struct {
-	Query             string           `json:"query"`
-	Limit             int              `json:"limit,omitempty"`
-	TBS               string           `json:"tbs,omitempty"`
-	Sources           []string         `json:"sources,omitempty"`
-	IncludeDomains    []string         `json:"includeDomains,omitempty"`
-	ExcludeDomains    []string         `json:"excludeDomains,omitempty"`
-	IgnoreInvalidURLs bool             `json:"ignoreInvalidURLs,omitempty"`
-	FetchOptions     *fcFetchOptions `json:"scrapeOptions,omitempty"`
+	Query             string          `json:"query"`
+	Limit             int             `json:"limit,omitempty"`
+	TBS               string          `json:"tbs,omitempty"`
+	Sources           []string        `json:"sources,omitempty"`
+	IncludeDomains    []string        `json:"includeDomains,omitempty"`
+	ExcludeDomains    []string        `json:"excludeDomains,omitempty"`
+	IgnoreInvalidURLs bool            `json:"ignoreInvalidURLs,omitempty"`
+	FetchOptions      *fcFetchOptions `json:"scrapeOptions,omitempty"`
 }
 
 type fcSearchResponse struct {
@@ -71,7 +69,7 @@ type fcFetchRequest struct {
 }
 
 type fcFetchResponse struct {
-	Success bool         `json:"success"`
+	Success bool        `json:"success"`
 	Data    fcFetchData `json:"data"`
 }
 
@@ -92,14 +90,14 @@ type fcFetchOptions struct {
 }
 
 type fcCrawlRequest struct {
-	URL                string           `json:"url"`
-	Limit              int              `json:"limit,omitempty"`
-	MaxDiscoveryDepth  int              `json:"maxDiscoveryDepth,omitempty"`
-	IncludePaths       []string         `json:"includePaths,omitempty"`
-	ExcludePaths       []string         `json:"excludePaths,omitempty"`
-	AllowExternalLinks bool             `json:"allowExternalLinks,omitempty"`
-	AllowSubdomains    bool             `json:"allowSubdomains,omitempty"`
-	FetchOptions      *fcFetchOptions `json:"scrapeOptions,omitempty"`
+	URL                string          `json:"url"`
+	Limit              int             `json:"limit,omitempty"`
+	MaxDiscoveryDepth  int             `json:"maxDiscoveryDepth,omitempty"`
+	IncludePaths       []string        `json:"includePaths,omitempty"`
+	ExcludePaths       []string        `json:"excludePaths,omitempty"`
+	AllowExternalLinks bool            `json:"allowExternalLinks,omitempty"`
+	AllowSubdomains    bool            `json:"allowSubdomains,omitempty"`
+	FetchOptions       *fcFetchOptions `json:"scrapeOptions,omitempty"`
 }
 
 type fcCrawlStartResponse struct {
@@ -108,8 +106,8 @@ type fcCrawlStartResponse struct {
 }
 
 type fcCrawlStatusResponse struct {
-	Status string         `json:"status"`
-	Total  int            `json:"total"`
+	Status string        `json:"status"`
+	Total  int           `json:"total"`
 	Data   []fcFetchData `json:"data"`
 }
 
@@ -229,6 +227,6 @@ func (p *FirecrawlProvider) Crawl(ctx context.Context, url string) (*config.Craw
 // Compile-time interface checks.
 var (
 	_ SearchProvider = (*FirecrawlProvider)(nil)
-	_ FetchProvider = (*FirecrawlProvider)(nil)
+	_ FetchProvider  = (*FirecrawlProvider)(nil)
 	_ CrawlProvider  = (*FirecrawlProvider)(nil)
 )
