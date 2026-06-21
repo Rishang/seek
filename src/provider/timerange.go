@@ -57,3 +57,12 @@ func iso8601(t time.Time) string {
 	}
 	return t.UTC().Format("2006-01-02T15:04:05.000Z")
 }
+
+// mdy formats a date as M/D/YYYY (Perplexity's date filters), returning "" for a
+// zero time. The format intentionally omits leading zeros, as the API expects.
+func mdy(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("1/2/2006")
+}

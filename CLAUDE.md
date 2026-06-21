@@ -19,9 +19,15 @@ Module `github.com/rishang/seek`, rooted in `src/`. Go 1.25, `urfave/cli/v3`, `i
 
 ## Architecture
 
-- **Factory pattern.** `provider.Factory` (`provider/factory.go`) is the single registry: it
-  constructs every provider once from config (the `switch pc.Name` in `NewFactory`) and hands them
-  out by name. Call sites never `new` a provider — they ask the factory for a capability.
+- **Provider registry.** `provider/registry.go` is the single source of truth for which providers
+  exist, their env var, and their optional self-host default. Capabilities are *derived* by probing
+  which interfaces each provider implements, so the matrix never drifts from the code. The CLI's
+  capability lists (`config_cmd.go`), env mapping (`providerEnv` in `main.go`), `--provider` help
+  text, and auto-chain ordering all read from it via `Providers()`, `NamesFor(cap)`, and
+  `HostDefault(name)`.
+- **Factory pattern.** `provider.Factory` (`provider/factory.go`) constructs every configured
+  provider once (looking each up in the registry's `byName` map) and hands them out by name. Call
+  sites never `new` a provider — they ask the factory for a capability.
 - **The abstract type the factory is built on is the `Provider` interface** (`provider/provider.go`),
   which every provider must satisfy (just `Name() string`). On top of that base, each provider opts
   into the capability interfaces it supports — `SearchProvider`, `FetchProvider`, `CrawlProvider`.
@@ -33,8 +39,10 @@ Module `github.com/rishang/seek`, rooted in `src/`. Go 1.25, `urfave/cli/v3`, `i
   `FetchProvider` / `CrawlProvider` it supports; there is no provider base class, only the
   `Provider` interface plus the capability interfaces.
 - **Add a provider:** new `provider/<name>.go` embedding `*httpClient`; implement the capability
-  methods; add a `case` in `factory.go`; add its env var to `providerEnv` in `main.go` and to
-  `config_cmd.go` lists. End the file with compile-time checks: `var _ SearchProvider = (*X)(nil)`.
+  methods; end the file with compile-time checks (`var _ SearchProvider = (*X)(nil)`); then add
+  **one line** to `registry` in `provider/registry.go`. Optionally rank it in
+  `config.DefaultPriority`. Everything else (factory, env mapping, init form, help text, auto chain)
+  derives from the registry.
 - **Shared HTTP** lives in `provider/client.go` (`post`/`get`/`expectOK`, Bearer auth). Only bypass
   it when a provider needs a different auth scheme (e.g. Brave's `X-Subscription-Token` header).
 - **Options flow** CLI → `config.SearchOptions`/`FetchOptions` → each provider formats to its own

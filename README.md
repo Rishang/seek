@@ -5,7 +5,7 @@
 <h1 align="center">seek</h1>
 
 <p align="center">
-  <strong>Live web access for CLI coding agents — 7 providers, one command, automatic failover.</strong>
+  <strong>Live web access for CLI coding agents — 8 providers, one command, automatic failover.</strong>
 </p>
 
 <p align="center">
@@ -436,7 +436,7 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 
 ## 🌐 Providers
 
-7 providers, one interface. Configure one or all — `auto` uses whatever has a key.
+8 providers, one interface. Configure one or all — `auto` uses whatever has a key.
 
 | Provider | search | fetch | crawl | Key env var |
 |---|---|---|---|---|
@@ -444,13 +444,16 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 | tavily | ✓ | ✓ | ✓ | `TAVILY_API_KEY` |
 | spider.cloud | ✓ | ✓ | ✓ | `SPIDER_API_KEY` |
 | exa | ✓ | ✓ | — | `EXA_API_KEY` |
+| perplexity | ✓ | ✓ | — | `PERPLEXITY_API_KEY` |
 | brave | ✓ | — | — | `BRAVE_API_KEY` |
 | webcrawlerapi | — | ✓ | ✓ | `WEBCRAWLERAPI_API_KEY` |
 | lightpanda | — | ✓ | — | `LIGHTPANDA_API_KEY` |
 
 `firecrawl` and `lightpanda` are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
 
-**Auto priority order:** `tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → brave`. Reorder in `config.yaml` to change preference; index 0 wins.
+`perplexity` extracts fetch content with an online model, so a fetched page is the model's best-effort extraction rather than the raw source.
+
+**Auto priority order:** `tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → brave → perplexity`. Reorder in `config.yaml` to change preference; index 0 wins. `perplexity` is last by default since its search quality is more variable for general queries.
 
 ---
 
@@ -589,7 +592,7 @@ The first one in `providers.priority` that supports the operation (search/fetch/
 **What if a provider isn't in my priority list?**  
 It's still tried — appended after the listed ones. A typo in the list never silently drops a usable provider.
 
-**Do I need all 7 providers?**  
+**Do I need all 8 providers?**  
 No. One key is enough. `auto` works with whatever it finds. More keys = more resilience.
 
 **Where do my API keys go?**  

@@ -8,7 +8,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 - [Capability matrix](#capability-matrix)
 - [The `auto` provider](#the-auto-provider-search--fetch)
 - [Providers](#providers)
-  - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa)
+  - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity)
 - [Auth](#auth)
 - [Time range](#time-range)
 - [Published date](#published-date)
@@ -26,6 +26,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 | lightpanda      |   —    |   ✓    |   —   |     —      |       —        | `lightpanda.go`   |
 | brave           |   ✓    |   —    |   —   |     ✓      |   `page_age`   | `brave.go`        |
 | exa             |   ✓    |   ✓    |   —   |     ✓      | `publishedDate`|  `exa.go`         |
+| perplexity      |   ✓    |   ✓    |   —   |     ✓      |     `date`     | `perplexity.go`   |
 
 Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
@@ -141,6 +142,20 @@ Example config.yaml priority hint:
 - Neural search returns inline excerpts (search alone often yields usable content).
 - `publishedDate` → published date; ISO 8601 time filter.
 
+---
+
+### 8. perplexity
+
+**Docs:** https://docs.perplexity.ai
+**Auth:** `Authorization: Bearer <key>`
+**Capabilities:** Search (`/search`), Fetch (`/chat/completions`, online `sonar` model)
+
+**Notes:**
+- Search uses the dedicated Search API; `date` → published date.
+- `search_after_date_filter` / `search_before_date_filter` time filter (`M/D/YYYY`, `mdy`).
+- Fetch drives an online model to extract page content, so the result is a best-effort
+  extraction, not the raw page source. The model honors the requested markdown/html format.
+
 ## Auth
 
 Shared `httpClient` (`client.go`) sends `Authorization: Bearer <key>`. Exceptions:
@@ -161,6 +176,7 @@ each provider formats to its own param via helpers in `timerange.go`:
 | tavily       | `start_date` / `end_date`      | `YYYY-MM-DD` (`ymd`)                                  |
 | brave        | `freshness`                    | `YYYY-MM-DDtoYYYY-MM-DD` (`braveFreshness`)           |
 | exa          | `startPublishedDate` / `endPublishedDate` | ISO 8601 (`iso8601`)                      |
+| perplexity   | `search_after_date_filter` / `search_before_date_filter` | `M/D/YYYY` (`mdy`)         |
 
 Open bounds drop out (`omitempty` / empty string). If a selected provider lacks
 `TimeRangeSearcher`, `main.go` emits `logx.Warn` and runs the search without the filter.
@@ -171,6 +187,7 @@ Maps to `SearchResult.PublishedDate` (JSON `published_date`, `omitempty`):
 
 - **brave** — `page_age` (ISO 8601, when known).
 - **exa** — `publishedDate` (ISO 8601, when known).
+- **perplexity** — `date` (per search result, when known).
 - **tavily** — `published_date`, only for `topic=news`; empty for general search.
 - **firecrawl / spider** — none; field omitted.
 
@@ -185,10 +202,21 @@ So a docs/landing page with no date, or a general (non-news) tavily query, yield
 
 ## Adding a provider
 
+The provider **registry** (`provider/registry.go`) is the single source of truth:
+it lists every provider once, with its env var and optional self-host default, and
+*derives* capabilities by probing which interfaces the type implements. The CLI's
+provider lists, key prompts, host defaults, and auto-chain ordering all read from
+it — so a new provider shows up everywhere from one entry.
+
 1. New `provider/<name>.go` embedding `*httpClient`; implement the capability methods.
 2. End the file with compile-time checks: `var _ SearchProvider = (*X)(nil)` (one per capability).
-3. Add `SupportsTimeRange() bool` if it honors a date window.
-4. Register the `case` in `factory.go`; add the env var to `providerEnv` in `main.go`.
-5. Add it to the provider lists in `config_cmd.go` and the usage strings in `main.go`.
-6. If it supports search or fetch, add it to `defaultAutoChains` (`config_cmd.go`) so the `auto` provider ranks it.
-7. Document the upstream API in `.idea/providers.md` and add a row here.
+3. Add `SupportsTimeRange() bool` if it honors a date window (add a date helper to `timerange.go`).
+4. Add **one line** to `registry` in `registry.go`: name, env var, host default (`""` if cloud-only),
+   and the constructor. That is the only wiring step — `factory.go` builds it, `main.go`'s
+   `providerEnv`, `config_cmd.go`'s capability lists, and the auto chain all derive from it.
+5. Optionally place it in `config.DefaultPriority` (`config/config.go`) to rank it for `auto`;
+   any capable provider omitted from that list is still appended automatically.
+6. Document the upstream API in `.idea/providers.md` and add a row to the matrix above.
+
+The registry's capability matrix is guarded by `registry_test.go`, which fails if a
+provider's derived caps ever drift from the interfaces it implements.

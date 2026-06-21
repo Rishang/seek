@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rishang/seek/cache"
@@ -114,6 +115,16 @@ var verboseFlag = &cli.BoolFlag{
 // providerFlag is reused (with operation-specific usage) by every command.
 func providerFlag(usage string) *cli.StringFlag {
 	return &cli.StringFlag{Name: "provider", Aliases: []string{"p"}, Usage: usage}
+}
+
+// providerUsage builds the --provider help text from the registry so it never
+// drifts from the actual capable providers. withAuto prefixes "auto (default)".
+func providerUsage(cap provider.Capability, withAuto bool) string {
+	names := provider.NamesFor(cap)
+	if withAuto {
+		names = append([]string{"auto (default)"}, names...)
+	}
+	return "Provider: " + strings.Join(names, ", ")
 }
 
 func main() {
@@ -250,7 +261,7 @@ func searchCmd() *cli.Command {
 		Usage:     "Run a web search",
 		UsageText: "seek search [-p provider] [--start DD/MM/YYYY] [--end DD/MM/YYYY] [--range N] <query>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: auto (default), firecrawl, tavily, spider.cloud, brave, exa"),
+			providerFlag(providerUsage(provider.CapSearch, true)),
 			&cli.StringFlag{Name: "start", Usage: "Only results published on/after this date (DD/MM/YYYY)"},
 			&cli.StringFlag{Name: "end", Usage: "Only results published on/before this date (DD/MM/YYYY)"},
 			&cli.IntFlag{Name: "range", Usage: "Only results from the last N days (today back N days)"},
@@ -332,7 +343,7 @@ func fetchCmd() *cli.Command {
 		Usage:     "Fetch and extract content from a URL",
 		UsageText: "seek fetch [-p provider] [-f format] <url>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: auto (default), firecrawl, tavily, spider.cloud, webcrawlerapi, lightpanda, exa"),
+			providerFlag(providerUsage(provider.CapFetch, true)),
 			&cli.StringFlag{
 				Name:    "format",
 				Aliases: []string{"f"},
@@ -378,7 +389,7 @@ func crawlCmd() *cli.Command {
 		Usage:     "Crawl a website",
 		UsageText: "seek crawl [-p provider] <url>",
 		Flags: []cli.Flag{
-			providerFlag("Provider: firecrawl, tavily, spider.cloud, webcrawlerapi"),
+			providerFlag(providerUsage(provider.CapCrawl, false)),
 			outputFlag,
 			noCacheFlag,
 		},
@@ -427,7 +438,7 @@ func setupCache() (cache.Store, error) {
 	// Only fetch and crawl are cached; search always hits the provider.
 	ops := map[string]config.CacheConfig{
 		"fetch": cfg.Fetch.Cache,
-		"crawl":  cfg.Crawl.Cache,
+		"crawl": cfg.Crawl.Cache,
 	}
 	enabled := false
 	for _, c := range ops {
@@ -481,16 +492,17 @@ func parseFormat(s string) config.FetchOutputFormat {
 }
 
 // providerEnv maps each provider to the environment variable that overrides its
-// stored API key. It is the single source of truth for known providers.
-var providerEnv = []struct{ Name, Env string }{
-	{"firecrawl", "FIRECRAWL_API_KEY"},
-	{"tavily", "TAVILY_API_KEY"},
-	{"spider.cloud", "SPIDER_API_KEY"},
-	{"webcrawlerapi", "WEBCRAWLERAPI_API_KEY"},
-	{"lightpanda", "LIGHTPANDA_API_KEY"},
-	{"brave", "BRAVE_API_KEY"},
-	{"exa", "EXA_API_KEY"},
-}
+// stored API key. It is derived from the provider registry (the single source
+// of truth for which providers exist), preserving the registry's canonical
+// order.
+var providerEnv = func() []struct{ Name, Env string } {
+	ps := provider.Providers()
+	out := make([]struct{ Name, Env string }, len(ps))
+	for i, p := range ps {
+		out[i] = struct{ Name, Env string }{p.Name, p.Env}
+	}
+	return out
+}()
 
 // loadProviders builds the factory, taking each API key from provider.yaml and
 // letting the matching environment variable override it when set.

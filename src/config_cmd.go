@@ -12,27 +12,21 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/rishang/seek/cache"
 	"github.com/rishang/seek/config"
+	"github.com/rishang/seek/provider"
 	"github.com/urfave/cli/v3"
 )
 
 // readmeURL is surfaced in help output so users can find the full docs.
 const readmeURL = "https://github.com/rishang/seek#readme"
 
-// Providers grouped by the capability they support. Reused by the config view
-// and the init flag validation.
+// Providers grouped by the capability they support, derived from the provider
+// registry (the single source of truth). Reused by the config view, the init
+// form, and the init flag validation.
 var (
-	searchProviders = []string{"firecrawl", "tavily", "spider.cloud", "brave", "exa"}
-	fetchProviders = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi", "lightpanda", "exa"}
-	crawlProviders  = []string{"firecrawl", "tavily", "spider.cloud", "webcrawlerapi"}
+	searchProviders = provider.NamesFor(provider.CapSearch)
+	fetchProviders  = provider.NamesFor(provider.CapFetch)
+	crawlProviders  = provider.NamesFor(provider.CapCrawl)
 )
-
-// providerHostDefaults lists the self-hostable (OSS) providers and the base URL
-// of their managed cloud. init prompts for a host for these, defaulting to the
-// cloud URL.
-var providerHostDefaults = map[string]string{
-	"firecrawl":  "https://api.firecrawl.dev",
-	"lightpanda": "https://euwest.cloud.lightpanda.io",
-}
 
 func configCmd() *cli.Command {
 	init := configInitCmd()
@@ -251,7 +245,10 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 	fmt.Printf("Wrote %s\n", cfgPath)
 
 	pruneEmptyCreds(creds)
-	if len(creds) > 0 {
+	// Save when there are creds to write, or when a file already exists so that
+	// removals (e.g. de-selecting providers in the form) are persisted even when
+	// the last provider was dropped.
+	if len(creds) > 0 || fileExists(provPath) {
 		if err := config.SaveProviders(provPath, creds); err != nil {
 			return err
 		}
@@ -281,24 +278,8 @@ func configuredNames(creds map[string]config.Credential) []string {
 	return out
 }
 
-// filterConfigured keeps the capable providers (in capable order) that are
-// present in the configured set.
-func filterConfigured(capable, configured []string) []string {
-	set := make(map[string]bool, len(configured))
-	for _, n := range configured {
-		set[n] = true
-	}
-	var out []string
-	for _, n := range capable {
-		if set[n] {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
 // pickDefault returns cur when it is among opts, else fallback. Keeps a form's
-// preselected value valid when the option set shrinks to configured providers.
+// preselected value valid when the stored provider is no longer a valid option.
 func pickDefault(cur string, opts []string, fallback string) string {
 	for _, o := range opts {
 		if o == cur {
@@ -313,13 +294,14 @@ func pickDefault(cur string, opts []string, fallback string) string {
 //  1. multi-select which providers to configure (pre-checked from creds);
 //  2. a per-provider group (key, plus host for OSS providers) shown only while
 //     that provider is selected in stage 1;
-//  3. operation settings whose provider options are restricted, live, to the
-//     stage-1 selection (plus "auto"); then cache settings and overwrite confirm.
+//  3. operation settings whose provider options are "auto" plus every capable
+//     provider (from the registry); then cache settings and overwrite confirm.
 //
 // It mutates c and creds in place and returns false when the user cancels.
-// ponytail: stage-3 options key off the *selected* set, not stored keys — a
-// provider picked but left blank still appears, which is fine (it just won't
-// resolve at runtime, and the user can step back to fill the key).
+// Stage-3 offers the full capable set rather than only configured providers, so
+// a key added in stage 2 (or a newly supported provider) is selectable right
+// away. Picking a provider with no key is allowed; it simply won't resolve at
+// runtime until a key is set.
 func runInitForm(c *config.Config, creds map[string]config.Credential, path string, assumeYes bool) (bool, error) {
 	selected := configuredNames(creds)
 	selectedSet := func() map[string]bool {
@@ -335,18 +317,15 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 	keyVals := map[string]*string{}
 	hostVals := map[string]*string{}
 
-	// Stage-3 option lists: providers already configured (with stored creds),
-	// plus "auto". Static, so each select sizes to its own option count — an
-	// OptionsFunc would pin every select to a tall fixed-height viewport and
-	// leave large blank gaps. (On a first-time run nothing is configured yet, so
-	// search/fetch offer just "auto", which is the right default anyway.)
-	configured := configuredNames(creds)
-	searchOpts := append([]string{"auto"}, filterConfigured(searchProviders, configured)...)
-	fetchOpts := append([]string{"auto"}, filterConfigured(fetchProviders, configured)...)
-	crawlOpts := filterConfigured(crawlProviders, configured)
-	if len(crawlOpts) == 0 {
-		crawlOpts = crawlProviders // nothing configured supports crawl; offer the full list
-	}
+	// Stage-3 option lists: "auto" plus every capable provider, derived from the
+	// provider registry (the source of truth). Showing the full capable set —
+	// rather than only providers with a key already on disk — means a provider you
+	// add a key for in this same session (stage 2) is immediately selectable here,
+	// and newly supported providers always appear. Lists are static, so each
+	// select sizes to its own option count (no OptionsFunc height padding).
+	searchOpts := append([]string{"auto"}, searchProviders...)
+	fetchOpts := append([]string{"auto"}, fetchProviders...)
+	crawlOpts := crawlProviders // crawl has no "auto"
 
 	// Stage-3 bindings, clamped to the option lists above.
 	searchP := pickDefault(orValue(c.Search.Provider, "auto"), searchOpts, "auto")
@@ -378,7 +357,7 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 			huh.NewInput().Title(name + " API key").Description("leave blank to skip").
 				EchoMode(huh.EchoModePassword).Value(keyVals[name]),
 		}
-		if def, ok := providerHostDefaults[name]; ok {
+		if def := provider.HostDefault(name); def != "" {
 			h := orValue(creds[name].Host, def)
 			hostVals[name] = &h
 			fields = append(fields, huh.NewInput().Title(name+" host").Value(hostVals[name]))
@@ -428,20 +407,12 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 		return false, nil
 	}
 
-	// Write back keys/hosts for the selected providers only; deselected ones keep
-	// whatever was already stored (non-destructive).
-	sset := selectedSet()
-	for name, kv := range keyVals {
-		if !sset[name] {
-			continue
-		}
-		cred := creds[name]
-		cred.APIKey = strings.TrimSpace(*kv)
-		if hv, ok := hostVals[name]; ok {
-			cred.Host = strings.TrimSpace(*hv)
-		}
-		creds[name] = cred
-	}
+	// Write back credentials based on the stage-1 selection. The multi-select is
+	// pre-checked from existing creds, so a provider left selected keeps/updates
+	// its key, while a de-selected one is dropped from provider.yaml entirely
+	// (de-select == "remove this provider"). Empty selected entries are pruned
+	// later by pruneEmptyCreds.
+	applyProviderSelection(creds, selectedSet(), keyVals, hostVals)
 
 	// Write back settings. Each value was chosen from a static option list, so no
 	// post-hoc clamping is needed.
@@ -463,6 +434,25 @@ func pruneEmptyCreds(creds map[string]config.Credential) {
 		if c.APIKey == "" && c.Host == "" {
 			delete(creds, name)
 		}
+	}
+}
+
+// applyProviderSelection writes the form's key/host inputs back into creds.
+// Providers in selected are upserted from keyVals/hostVals; providers not in
+// selected are removed entirely, so de-selecting a provider in the init form
+// drops its stored credential.
+func applyProviderSelection(creds map[string]config.Credential, selected map[string]bool, keyVals, hostVals map[string]*string) {
+	for name, kv := range keyVals {
+		if !selected[name] {
+			delete(creds, name)
+			continue
+		}
+		cred := creds[name]
+		cred.APIKey = strings.TrimSpace(*kv)
+		if hv, ok := hostVals[name]; ok {
+			cred.Host = strings.TrimSpace(*hv)
+		}
+		creds[name] = cred
 	}
 }
 

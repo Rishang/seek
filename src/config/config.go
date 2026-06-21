@@ -95,7 +95,7 @@ func SaveProviders(path string, creds map[string]Credential) error {
 // try-order, serialized under the sibling top-level "providers" key.
 type Config struct {
 	Search Operation `yaml:"search"`
-	Fetch Operation `yaml:"fetch"`
+	Fetch  Operation `yaml:"fetch"`
 	Crawl  Operation `yaml:"crawl"`
 
 	// Priority is the global "auto" try-order (index 0 = highest priority),
@@ -107,7 +107,7 @@ type Config struct {
 // DefaultPriority is the built-in "auto" try-order, used when config.yaml does
 // not set providers.priority. Index 0 is highest priority.
 var DefaultPriority = []string{
-	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave",
+	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave", "perplexity",
 }
 
 // Operation configures a single capability (search, fetch, or crawl).
@@ -203,7 +203,7 @@ func Default() Config {
 	// Caching applies to fetch and crawl only; search has no cache config.
 	return Config{
 		Search: Operation{Provider: "auto"},
-		Fetch: Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
+		Fetch:  Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
 
 		Priority: append([]string(nil), DefaultPriority...),

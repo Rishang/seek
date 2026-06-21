@@ -16,7 +16,7 @@ func TestConfiguredNamesReturnsOnlyProvidersWithCreds(t *testing.T) {
 	creds := map[string]config.Credential{
 		"exa":        {APIKey: "k"},
 		"lightpanda": {Host: "https://example"}, // host-only still counts
-		"brave":      {},                         // empty: excluded
+		"brave":      {},                        // empty: excluded
 	}
 	got := configuredNames(creds)
 
@@ -35,17 +35,6 @@ func TestConfiguredNamesReturnsOnlyProvidersWithCreds(t *testing.T) {
 	}
 }
 
-func TestFilterConfiguredKeepsCapableOrder(t *testing.T) {
-	// searchProviders order is firecrawl, tavily, spider.cloud, brave, exa.
-	got := filterConfigured(searchProviders, []string{"exa", "brave", "webcrawlerapi"})
-	// webcrawlerapi isn't a search provider, so it's dropped; order follows
-	// searchProviders, not the configured slice.
-	want := []string{"brave", "exa"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-}
-
 func TestPickDefaultFallsBackWhenInvalid(t *testing.T) {
 	opts := []string{"auto", "exa"}
 	if got := pickDefault("exa", opts, "auto"); got != "exa" {
@@ -53,6 +42,41 @@ func TestPickDefaultFallsBackWhenInvalid(t *testing.T) {
 	}
 	if got := pickDefault("firecrawl", opts, "auto"); got != "auto" {
 		t.Fatalf("invalid current should fall back, got %q", got)
+	}
+}
+
+// TestApplyProviderSelectionDropsDeselected verifies that de-selecting a
+// provider in the init form removes its stored credential, while selected
+// providers are upserted from the form inputs.
+func TestApplyProviderSelectionDropsDeselected(t *testing.T) {
+	creds := map[string]config.Credential{
+		"exa":        {APIKey: "old-exa"},
+		"brave":      {APIKey: "old-brave"}, // will be de-selected -> dropped
+		"lightpanda": {Host: "https://old"}, // host-only, de-selected -> dropped
+	}
+	str := func(s string) *string { return &s }
+	keyVals := map[string]*string{
+		"exa":        str("new-exa"),
+		"brave":      str("old-brave"),
+		"lightpanda": str(""),
+		"tavily":     str("new-tavily"), // newly selected
+	}
+	hostVals := map[string]*string{"lightpanda": str("https://old")}
+	selected := map[string]bool{"exa": true, "tavily": true}
+
+	applyProviderSelection(creds, selected, keyVals, hostVals)
+
+	if creds["exa"].APIKey != "new-exa" {
+		t.Errorf("exa key should be updated, got %q", creds["exa"].APIKey)
+	}
+	if creds["tavily"].APIKey != "new-tavily" {
+		t.Errorf("tavily should be added, got %q", creds["tavily"].APIKey)
+	}
+	if _, ok := creds["brave"]; ok {
+		t.Error("de-selected brave should be dropped")
+	}
+	if _, ok := creds["lightpanda"]; ok {
+		t.Error("de-selected lightpanda should be dropped")
 	}
 }
 
