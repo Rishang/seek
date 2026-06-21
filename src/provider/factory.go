@@ -34,24 +34,10 @@ func NewFactory(providers []config.ProviderConfig) *Factory {
 		if pc.APIKey == "" && pc.Host == "" {
 			continue // unconfigured: no key and no host
 		}
-		switch pc.Name {
-		case "firecrawl":
-			f.providers[pc.Name] = NewFirecrawlProvider(pc)
-		case "tavily":
-			f.providers[pc.Name] = NewTavilyProvider(pc)
-		case "spider.cloud":
-			f.providers[pc.Name] = NewSpiderProvider(pc)
-		case "webcrawlerapi":
-			f.providers[pc.Name] = NewWebCrawlerAPIProvider(pc)
-		case "lightpanda":
-			f.providers[pc.Name] = NewLightpandaProvider(pc)
-		case "brave":
-			f.providers[pc.Name] = NewBraveProvider(pc)
-		case "exa":
-			f.providers[pc.Name] = NewExaProvider(pc)
-		default:
-			// Unknown provider; skip silently (caller can check existence).
+		if r, ok := byName[pc.Name]; ok {
+			f.providers[pc.Name] = r.new(pc)
 		}
+		// Unknown provider: skipped silently (caller can check existence).
 	}
 	return f
 }

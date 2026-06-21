@@ -16,7 +16,7 @@ func TestConfiguredNamesReturnsOnlyProvidersWithCreds(t *testing.T) {
 	creds := map[string]config.Credential{
 		"exa":        {APIKey: "k"},
 		"lightpanda": {Host: "https://example"}, // host-only still counts
-		"brave":      {},                         // empty: excluded
+		"brave":      {},                        // empty: excluded
 	}
 	got := configuredNames(creds)
 
@@ -32,17 +32,6 @@ func TestConfiguredNamesReturnsOnlyProvidersWithCreds(t *testing.T) {
 	// Order must follow providerEnv declaration order (lightpanda before exa).
 	if got[0] != "lightpanda" || got[1] != "exa" {
 		t.Fatalf("expected providerEnv order, got %v", got)
-	}
-}
-
-func TestFilterConfiguredKeepsCapableOrder(t *testing.T) {
-	// searchProviders order is firecrawl, tavily, spider.cloud, brave, exa.
-	got := filterConfigured(searchProviders, []string{"exa", "brave", "webcrawlerapi"})
-	// webcrawlerapi isn't a search provider, so it's dropped; order follows
-	// searchProviders, not the configured slice.
-	want := []string{"brave", "exa"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 

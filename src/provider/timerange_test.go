@@ -45,3 +45,14 @@ func TestYMDAndISO(t *testing.T) {
 		t.Fatal("zero time should format to empty string")
 	}
 }
+
+func TestMDY(t *testing.T) {
+	// Perplexity expects M/D/YYYY with no leading zeros.
+	d := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	if got := mdy(d); got != "1/2/2024" {
+		t.Fatalf("mdy: got %q", got)
+	}
+	if mdy(time.Time{}) != "" {
+		t.Fatal("zero time should format to empty string")
+	}
+}
