@@ -80,6 +80,25 @@ func TestApplyProviderSelectionDropsDeselected(t *testing.T) {
 	}
 }
 
+// TestCapableSubsetScopesToConfigured verifies the init settings dropdowns are
+// limited to the configured providers, preserving capability order.
+func TestCapableSubsetScopesToConfigured(t *testing.T) {
+	// searchProviders order is firecrawl, tavily, spider.cloud, brave, exa,
+	// perplexity. Configure two of them (out of order) plus a non-search provider.
+	configured := map[string]bool{"exa": true, "firecrawl": true, "webcrawlerapi": true}
+	got := capableSubset(searchProviders, configured)
+	// webcrawlerapi isn't search-capable so it's dropped; order follows
+	// searchProviders (firecrawl before exa), not the configured set.
+	want := []string{"firecrawl", "exa"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	// Nothing crawl-capable configured -> empty (no crawl default offered).
+	if c := capableSubset(crawlProviders, map[string]bool{"exa": true}); len(c) != 0 {
+		t.Fatalf("expected no crawl options, got %v", c)
+	}
+}
+
 // TestKeyGroupHideClosuresCaptureName replicates runInitForm's per-provider
 // hide-func construction to guard against a closure-capture regression (every
 // closure seeing the last loop value), which would make init prompt for the
