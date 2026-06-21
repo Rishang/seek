@@ -2,19 +2,20 @@ package provider
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/rishang/seek/config"
 )
 
-// PerplexityProvider supports search and fetch via the Perplexity API.
+// PerplexityProvider supports web search via the Perplexity Search API.
 //
 // Search uses the dedicated Search API (/search), which returns ranked web
-// results with snippets and publish dates. Fetch uses the Chat Completions API
-// (/chat/completions) with an online "sonar" model to retrieve and extract a
-// single page; because that content is model-processed it is a best-effort
-// extraction rather than the raw page source.
+// results with snippets and publish dates, and supports M/D/YYYY date-range
+// filters (TimeRangeSearcher).
+//
+// It is search-only: Perplexity has no page-scraping endpoint, and extracting a
+// page through a chat model yields a paraphrased summary rather than the real
+// page content, so fetch is left to providers that actually scrape.
 //
 // Perplexity uses bearer auth, so it goes through the shared post helper.
 //
@@ -24,9 +25,6 @@ type PerplexityProvider struct {
 }
 
 const perplexityBaseURL = "https://api.perplexity.ai"
-
-// perplexityFetchModel is the online model used to extract page content.
-const perplexityFetchModel = "sonar"
 
 func NewPerplexityProvider(cfg config.ProviderConfig) *PerplexityProvider {
 	return &PerplexityProvider{httpClient: newHTTPClient("perplexity", cfg.APIKey)}
@@ -52,24 +50,6 @@ type pplxSearchResult struct {
 	URL     string `json:"url"`
 	Snippet string `json:"snippet"`
 	Date    string `json:"date"`
-}
-
-type pplxChatRequest struct {
-	Model    string        `json:"model"`
-	Messages []pplxMessage `json:"messages"`
-}
-
-type pplxMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type pplxChatResponse struct {
-	Choices []pplxChoice `json:"choices"`
-}
-
-type pplxChoice struct {
-	Message pplxMessage `json:"message"`
 }
 
 // ---- Search ----
@@ -101,44 +81,8 @@ func (p *PerplexityProvider) Search(ctx context.Context, query string, opts conf
 	return results, nil
 }
 
-// ---- Fetch (Chat Completions with an online model) ----
-
-func (p *PerplexityProvider) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
-	format := "markdown"
-	if opts.OutputFormat == config.FormatHTML {
-		format = "html"
-	}
-	prompt := fmt.Sprintf(
-		"Retrieve the page at %s and return its main content as %s. "+
-			"Output only the extracted content with no commentary.",
-		url, format,
-	)
-
-	body := pplxChatRequest{
-		Model: perplexityFetchModel,
-		Messages: []pplxMessage{
-			{Role: "system", Content: "You are a web content extractor. Return only the requested page content."},
-			{Role: "user", Content: prompt},
-		},
-	}
-
-	var resp pplxChatResponse
-	if err := p.post(ctx, "fetch", perplexityBaseURL+"/chat/completions", &body, &resp); err != nil {
-		return nil, err
-	}
-	if len(resp.Choices) == 0 {
-		return nil, fmt.Errorf("perplexity fetch returned no content for %s", url)
-	}
-
-	return &config.FetchResult{
-		URL:     url,
-		Content: strings.TrimSpace(resp.Choices[0].Message.Content),
-		Format:  format,
-	}, nil
-}
-
 // Compile-time interface checks.
 var (
-	_ SearchProvider = (*PerplexityProvider)(nil)
-	_ FetchProvider  = (*PerplexityProvider)(nil)
+	_ SearchProvider    = (*PerplexityProvider)(nil)
+	_ TimeRangeSearcher = (*PerplexityProvider)(nil)
 )

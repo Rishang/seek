@@ -26,7 +26,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 | lightpanda      |   —    |   ✓    |   —   |     —      |       —        | `lightpanda.go`   |
 | brave           |   ✓    |   —    |   —   |     ✓      |   `page_age`   | `brave.go`        |
 | exa             |   ✓    |   ✓    |   —   |     ✓      | `publishedDate`|  `exa.go`         |
-| perplexity      |   ✓    |   ✓    |   —   |     ✓      |     `date`     | `perplexity.go`   |
+| perplexity      |   ✓    |   —    |   —   |     ✓      |     `date`     | `perplexity.go`   |
 
 Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
@@ -148,13 +148,14 @@ Example config.yaml priority hint:
 
 **Docs:** https://docs.perplexity.ai
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Search (`/search`), Fetch (`/chat/completions`, online `sonar` model)
+**Capabilities:** Search (`/search`)
 
 **Notes:**
 - Search uses the dedicated Search API; `date` → published date.
 - `search_after_date_filter` / `search_before_date_filter` time filter (`M/D/YYYY`, `mdy`).
-- Fetch drives an online model to extract page content, so the result is a best-effort
-  extraction, not the raw page source. The model honors the requested markdown/html format.
+- Search-only: Perplexity has no page-scraping endpoint. Extracting a page through the
+  chat/completions model returned a paraphrased summary rather than the real page content,
+  so fetch was dropped — leave fetch to providers that actually scrape.
 
 ## Auth
 

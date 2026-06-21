@@ -444,14 +444,12 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 | tavily | ✓ | ✓ | ✓ | `TAVILY_API_KEY` |
 | spider.cloud | ✓ | ✓ | ✓ | `SPIDER_API_KEY` |
 | exa | ✓ | ✓ | — | `EXA_API_KEY` |
-| perplexity | ✓ | ✓ | — | `PERPLEXITY_API_KEY` |
+| perplexity | ✓ | — | — | `PERPLEXITY_API_KEY` |
 | brave | ✓ | — | — | `BRAVE_API_KEY` |
 | webcrawlerapi | — | ✓ | ✓ | `WEBCRAWLERAPI_API_KEY` |
 | lightpanda | — | ✓ | — | `LIGHTPANDA_API_KEY` |
 
 `firecrawl` and `lightpanda` are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
-
-`perplexity` extracts fetch content with an online model, so a fetched page is the model's best-effort extraction rather than the raw source.
 
 **Auto priority order:** `tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → brave → perplexity`. Reorder in `config.yaml` to change preference; index 0 wins. `perplexity` is last by default since its search quality is more variable for general queries.
 
