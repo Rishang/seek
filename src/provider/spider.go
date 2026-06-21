@@ -17,8 +17,6 @@ func NewSpiderProvider(cfg config.ProviderConfig) *SpiderProvider {
 	return &SpiderProvider{httpClient: newHTTPClient("spider.cloud", cfg.APIKey)}
 }
 
-func (p *SpiderProvider) Name() string { return "spider.cloud" }
-
 const spiderBaseURL = "https://api.spider.cloud"
 
 // ---- request / response types ----
@@ -150,6 +148,6 @@ func (p *SpiderProvider) Crawl(ctx context.Context, url string) (*config.CrawlRe
 
 var (
 	_ SearchProvider = (*SpiderProvider)(nil)
-	_ FetchProvider = (*SpiderProvider)(nil)
+	_ FetchProvider  = (*SpiderProvider)(nil)
 	_ CrawlProvider  = (*SpiderProvider)(nil)
 )

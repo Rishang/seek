@@ -33,8 +33,6 @@ type autoSearch struct {
 
 func newAutoSearch(chain []autoSearchEntry) *autoSearch { return &autoSearch{chain: chain} }
 
-func (a *autoSearch) Name() string { return "auto" }
-
 func (a *autoSearch) Attempts() []Attempt { return a.attempts }
 
 // SupportsTimeRange reports true if any provider in the chain honors a time
@@ -81,8 +79,6 @@ type autoFetch struct {
 
 func newAutoFetch(chain []autoFetchEntry) *autoFetch { return &autoFetch{chain: chain} }
 
-func (a *autoFetch) Name() string { return "auto" }
-
 func (a *autoFetch) Attempts() []Attempt { return a.attempts }
 
 func (a *autoFetch) Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error) {
@@ -122,6 +118,6 @@ var (
 	_ SearchProvider    = (*autoSearch)(nil)
 	_ AutoReporter      = (*autoSearch)(nil)
 	_ TimeRangeSearcher = (*autoSearch)(nil)
-	_ FetchProvider    = (*autoFetch)(nil)
+	_ FetchProvider     = (*autoFetch)(nil)
 	_ AutoReporter      = (*autoFetch)(nil)
 )

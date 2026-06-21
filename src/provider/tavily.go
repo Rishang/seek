@@ -17,8 +17,6 @@ func NewTavilyProvider(cfg config.ProviderConfig) *TavilyProvider {
 	return &TavilyProvider{httpClient: newHTTPClient("tavily", cfg.APIKey)}
 }
 
-func (p *TavilyProvider) Name() string { return "tavily" }
-
 // ---- request / response types ----
 
 type tvSearchRequest struct {
@@ -196,6 +194,6 @@ func (p *TavilyProvider) Crawl(ctx context.Context, url string) (*config.CrawlRe
 
 var (
 	_ SearchProvider = (*TavilyProvider)(nil)
-	_ FetchProvider = (*TavilyProvider)(nil)
+	_ FetchProvider  = (*TavilyProvider)(nil)
 	_ CrawlProvider  = (*TavilyProvider)(nil)
 )

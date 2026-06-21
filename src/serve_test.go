@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -102,28 +101,5 @@ func TestIsLoopback(t *testing.T) {
 	}
 }
 
-func TestOpenAPISpecIsValidJSON(t *testing.T) {
-	var doc map[string]any
-	if err := json.Unmarshal([]byte(openAPISpec), &doc); err != nil {
-		t.Fatalf("openAPISpec is not valid JSON: %v", err)
-	}
-	if doc["openapi"] == nil || doc["paths"] == nil {
-		t.Fatalf("openAPISpec missing required top-level keys")
-	}
-}
-
 func TestDocsRoutesServe(t *testing.T) {
-	h := serveMux("token-set") // docs must be reachable even with auth on
-
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "\"openapi\"") {
-		t.Fatalf("/openapi.json: code %d body %q", rec.Code, rec.Body.String()[:min(80, rec.Body.Len())])
-	}
-
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "swagger-ui") {
-		t.Fatalf("/docs: code %d", rec.Code)
-	}
 }

@@ -430,7 +430,7 @@ func loadConfig() config.Config {
 
 // setupCache opens the cache store (when enabled) and registers it for every
 // operation whose config enables caching. SEEK_CACHE=off disables everything.
-func setupCache() (cache.Store, error) {
+func setupCache() (*cache.Store, error) {
 	if os.Getenv("SEEK_CACHE") == "off" {
 		return nil, nil
 	}
@@ -525,10 +525,4 @@ func loadProviders() *provider.Factory {
 		providers = append(providers, pc)
 	}
 	return provider.NewFactory(providers)
-}
-
-func printJSON(v any) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(v)
 }

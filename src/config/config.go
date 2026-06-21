@@ -112,9 +112,9 @@ var DefaultPriority = []string{
 
 // Operation configures a single capability (search, fetch, or crawl).
 type Operation struct {
-	Provider string      `yaml:"provider"`
-	Cache    CacheConfig `yaml:"cache,omitempty"`
-	Options  Options     `yaml:"options,omitempty"`
+	Provider string       `yaml:"provider"`
+	Cache    CacheConfig  `yaml:"cache,omitempty"`
+	Options  FetchOptions `yaml:"options,omitempty"`
 }
 
 // CacheConfig controls result caching for an operation.
@@ -131,11 +131,6 @@ func (c CacheConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 // default in that case).
 func (c CacheConfig) TTL() time.Duration { return time.Duration(c.TTLSecs) * time.Second }
 
-// Options carries per-operation tunables. Currently only fetch uses it.
-type Options struct {
-	OutputFormat FetchOutputFormat `yaml:"output_format,omitempty"`
-}
-
 // FetchOutputFormat controls the response format for fetch requests.
 type FetchOutputFormat string
 
@@ -145,7 +140,8 @@ const (
 	FormatHTML     FetchOutputFormat = "html"
 )
 
-// FetchOptions carries optional parameters for a fetch request.
+// FetchOptions carries optional parameters for a fetch request; it also doubles
+// as the per-operation Options stored in config.yaml.
 type FetchOptions struct {
 	OutputFormat FetchOutputFormat `yaml:"output_format,omitempty"`
 }
@@ -203,7 +199,7 @@ func Default() Config {
 	// Caching applies to fetch and crawl only; search has no cache config.
 	return Config{
 		Search: Operation{Provider: "auto"},
-		Fetch:  Operation{Provider: "auto", Cache: enabledCache(), Options: Options{OutputFormat: FormatMarkdown}},
+		Fetch:  Operation{Provider: "auto", Cache: enabledCache(), Options: FetchOptions{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
 
 		Priority: append([]string(nil), DefaultPriority...),

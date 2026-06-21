@@ -28,9 +28,9 @@ Module `github.com/rishang/seek`, rooted in `src/`. Go 1.25, `urfave/cli/v3`, `i
 - **Factory pattern.** `provider.Factory` (`provider/factory.go`) constructs every configured
   provider once (looking each up in the registry's `byName` map) and hands them out by name. Call
   sites never `new` a provider — they ask the factory for a capability.
-- **The abstract type the factory is built on is the `Provider` interface** (`provider/provider.go`),
-  which every provider must satisfy (just `Name() string`). On top of that base, each provider opts
-  into the capability interfaces it supports — `SearchProvider`, `FetchProvider`, `CrawlProvider`.
+- **The base type the factory is built on is `Provider`** (`provider/provider.go`), an alias for
+  `any`: a provider need not satisfy any method. Each provider opts into the capability interfaces
+  it supports — `SearchProvider`, `FetchProvider`, `CrawlProvider`.
   The factory stores providers as the base `Provider` and the generic `capability[T]` helper
   type-asserts to the requested capability, returning a descriptive error when a provider is
   unconfigured or doesn't implement that capability. Add a capability → new interface in

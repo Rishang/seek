@@ -19,8 +19,6 @@ func NewWebCrawlerAPIProvider(cfg config.ProviderConfig) *WebCrawlerAPIProvider 
 	return &WebCrawlerAPIProvider{httpClient: newHTTPClient("webcrawlerapi", cfg.APIKey)}
 }
 
-func (p *WebCrawlerAPIProvider) Name() string { return "webcrawlerapi" }
-
 const wcaBaseURL = "https://api.webcrawlerapi.com"
 
 // ---- request / response types ----
@@ -50,7 +48,7 @@ type wcaCrawlStartResponse struct {
 }
 
 type wcaCrawlStatusResponse struct {
-	Status string              `json:"status"`
+	Status string             `json:"status"`
 	Pages  []wcaFetchResponse `json:"pages"`
 }
 
@@ -145,5 +143,5 @@ func (p *WebCrawlerAPIProvider) Crawl(ctx context.Context, url string) (*config.
 
 var (
 	_ FetchProvider = (*WebCrawlerAPIProvider)(nil)
-	_ CrawlProvider  = (*WebCrawlerAPIProvider)(nil)
+	_ CrawlProvider = (*WebCrawlerAPIProvider)(nil)
 )

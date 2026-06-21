@@ -18,7 +18,7 @@ func (s *stubFetch) Fetch(_ context.Context, url string, opts config.FetchOption
 	return &config.FetchResult{URL: url, Content: "fresh", Format: string(opts.OutputFormat)}, nil
 }
 
-func newStore(t *testing.T) cache.Store {
+func newStore(t *testing.T) *cache.Store {
 	t.Helper()
 	store, err := cache.OpenSQLite(filepath.Join(t.TempDir(), "cache.db"))
 	if err != nil {
@@ -33,9 +33,9 @@ func TestCachingFetchHitMiss(t *testing.T) {
 	stub := &stubFetch{}
 	dec := cachingFetch{
 		FetchProvider: stub,
-		store:          newStore(t),
-		provider:       "firecrawl",
-		ttl:            time.Hour,
+		store:         newStore(t),
+		provider:      "firecrawl",
+		ttl:           time.Hour,
 	}
 	opts := config.FetchOptions{OutputFormat: config.FormatMarkdown}
 
