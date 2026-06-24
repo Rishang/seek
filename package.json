@@ -1,0 +1,10 @@
+{
+  "name": "seek",
+  "version": "0.1.0",
+  "description": "seek web-search CLI — pi extension with auto-install + web-fetch skill",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  }
+}

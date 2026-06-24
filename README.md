@@ -96,8 +96,8 @@ agy -p "install seek from https://github.com/Rishang/seek and configure it as an
 # Cline / Cursor / any MCP agent — paste in chat (no shell wrapper):
 # install seek from https://github.com/Rishang/seek and add it as an MCP server
 
-# Pi addon — if you use Pi as your harness (https://github.com/earendil-works/pi)
-pi -p "install seek from https://github.com/Rishang/seek and register its web-fetch skill"
+# Pi — native pi-package with auto-install
+pi install git:github.com/Rishang/seek
 ```
 
 The agent reads this README, runs the install, and wires itself up. You just supply the API keys.
@@ -298,9 +298,20 @@ curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/skills/SKILL.md \
 
 That's it. No config file, no restart. Claude picks up the skill on the next session.
 
-### Pi (addon) — Skill
+### Pi — Native pi-package (recommended)
 
-If you use [Pi](https://github.com/earendil-works/pi) as your harness, drop the skill in Pi's skills dir:
+seek ships as a native [pi package](https://pi.dev/packages). One install — extension + skill, everything wired automatically.
+
+```sh
+pi install git:github.com/Rishang/seek
+```
+
+**What you get:**
+- **Auto-install extension** — on session start, checks if `seek` is on PATH. If not, prompts for one-click install (downloads the right binary for your OS/arch from GitHub releases). Non-interactive mode shows the manual install command.
+- **`/seek-install` command** — manual (re)install anytime.
+- **`web-fetch` skill** — registered automatically via `resources_discover`. Invoke with `/skill:web-fetch` or let Pi load it when relevant.
+
+**Manual fallback** — drop the skill file directly:
 
 ```sh
 # Global (all projects)
@@ -313,8 +324,6 @@ mkdir -p .pi/skills/web-fetch
 curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/skills/SKILL.md \
   -o .pi/skills/web-fetch/SKILL.md
 ```
-
-Invoke via `/skill:web-fetch` or let Pi load it automatically when relevant.
 
 ### OpenCode — MCP Server
 
@@ -541,6 +550,9 @@ seek config init --key firecrawl=fc-xxx --key tavily=tvly-xxx --yes
 All methods drop a `seek` binary on your `PATH`.
 
 ```sh
+# Pi native package (extension + skill, auto-install)
+pi install git:github.com/Rishang/seek
+
 # Install script — Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/Rishang/seek/main/install.sh | sh
 
