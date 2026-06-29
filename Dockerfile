@@ -7,18 +7,15 @@ COPY src/go.mod src/go.sum ./
 RUN go mod download
 
 COPY src/ ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /seek .
-
-FROM alpine:3.21
-
-# CA bundle for HTTPS calls to search/fetch/crawl providers.
 RUN apk add --no-cache ca-certificates \
-	&& adduser -D -u 65532 seek
+	&& CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /seek .
 
+FROM busybox:1.36-glibc
+
+COPY --from=build /etc/ssl/certs /etc/ssl/certs
 COPY --from=build /seek /usr/local/bin/seek
 
-USER seek
-WORKDIR /home/seek
+WORKDIR /root
 
 EXPOSE 8787
 

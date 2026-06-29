@@ -572,6 +572,10 @@ ubi --project Rishang/seek --in ~/.local/bin
 # From source (Go 1.25+)
 git clone https://github.com/rishang/seek && cd seek
 task build   # or: cd src && go build -o ../bin/seek .
+
+# Docker (busybox-based, ~9 MB)
+docker pull rishang/seek
+docker run -it --entrypoint sh rishang/seek   # shell into the image
 ```
 
 **Supported targets:** Linux and macOS (`amd64` / `arm64`), Windows `.zip` → [Releases](https://github.com/Rishang/seek/releases)

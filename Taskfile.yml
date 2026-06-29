@@ -66,6 +66,23 @@ tasks:
     cmds:
       - go mod tidy
 
+  docker:build:
+    desc: Build the Docker image
+    vars:
+      DOCKER_IMAGE: '{{.DOCKER_IMAGE | default "rishang/seek"}}'
+      TAG: '{{.TAG | default "latest"}}'
+    cmds:
+      - docker build -t '{{.DOCKER_IMAGE}}:{{.TAG}}' .
+
+  docker:push:
+    desc: Build and push the Docker image to DockerHub
+    vars:
+      DOCKER_IMAGE: '{{.DOCKER_IMAGE | default "rishang/seek"}}'
+      TAG: '{{.TAG | default "latest"}}'
+    cmds:
+      - task: docker:build
+      - docker push '{{.DOCKER_IMAGE}}:{{.TAG}}'
+
   clean:
     desc: Remove build artifacts
     cmds:
