@@ -1,0 +1,9 @@
+.git
+.github
+bin
+dist
+.idea
+*.md
+notes
+docs
+.env

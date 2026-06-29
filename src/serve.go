@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/rishang/seek/logx"
 	"github.com/urfave/cli/v3"
 )
+
+const defaultMaxConcurrent = 50
 
 // serveCmd exposes search/fetch/crawl over a small JSON HTTP API. net/http
 // serves every request in its own goroutine, so the server is concurrent by
@@ -39,22 +42,47 @@ func serveCmd() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "addr", Value: "127.0.0.1:8787", Usage: "Listen address (host:port)"},
 			&cli.StringFlag{Name: "token", Usage: "Require this Bearer token (or set SEEK_SERVE_TOKEN)"},
+			&cli.IntFlag{Name: "max-concurrent", Value: defaultMaxConcurrent, Usage: "Max in-flight operation requests (or set SEEK_SERVE_MAX_CONCURRENT; GET /healthz is exempt)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			token := cmd.String("token")
 			if token == "" {
 				token = os.Getenv("SEEK_SERVE_TOKEN")
 			}
-			return runServe(ctx, cmd.String("addr"), token)
+			maxConcurrent, err := serveMaxConcurrent(cmd)
+			if err != nil {
+				return err
+			}
+			return runServe(ctx, cmd.String("addr"), token, maxConcurrent)
 		},
 	}
 }
 
+// serveMaxConcurrent resolves the in-flight request cap: --max-concurrent overrides
+// SEEK_SERVE_MAX_CONCURRENT, which defaults to 50.
+func serveMaxConcurrent(cmd *cli.Command) (int, error) {
+	if cmd.IsSet("max-concurrent") {
+		n := int(cmd.Int("max-concurrent"))
+		if n <= 0 {
+			return 0, fmt.Errorf("--max-concurrent must be positive")
+		}
+		return n, nil
+	}
+	if v := os.Getenv("SEEK_SERVE_MAX_CONCURRENT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return 0, fmt.Errorf("invalid SEEK_SERVE_MAX_CONCURRENT %q: must be a positive integer", v)
+		}
+		return n, nil
+	}
+	return defaultMaxConcurrent, nil
+}
+
 // runServe builds the HTTP server and serves until ctx is cancelled.
-func runServe(ctx context.Context, addr, token string) error {
+func runServe(ctx context.Context, addr, token string, maxConcurrent int) error {
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           serveMux(token),
+		Handler:           serveHandler(token, maxConcurrent),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -92,6 +120,30 @@ func serveMux(token string) http.Handler {
 		fmt.Fprintln(w, "ok")
 	})
 	return withLogging(mux)
+}
+
+// serveHandler is the production stack: routes plus concurrency limiting.
+func serveHandler(token string, maxConcurrent int) http.Handler {
+	return withConcurrencyLimit(maxConcurrent, withLogging(serveMux(token)))
+}
+
+// withConcurrencyLimit caps in-flight operation requests. GET /healthz bypasses
+// the cap so liveness probes stay reliable under load.
+func withConcurrencyLimit(max int, next http.Handler) http.Handler {
+	sem := make(chan struct{}, max)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		select {
+		case sem <- struct{}{}:
+			defer func() { <-sem }()
+			next.ServeHTTP(w, r)
+		default:
+			httpError(w, http.StatusServiceUnavailable, "too many concurrent requests")
+		}
+	})
 }
 
 // withLogging emits a debug line per request (method, path, remote addr).
