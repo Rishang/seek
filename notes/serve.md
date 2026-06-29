@@ -19,8 +19,10 @@ shared `buildTimeRange` (same semantics as the `search` CLI flags).
 
 ## Concurrency
 
-`net/http` serves every request in its own goroutine, so the API is concurrent
-by default. The operation runners (`opSearch`/`opFetch`/`opCrawl` in `ops.go`)
+`net/http` serves every request in its own goroutine. In-flight operation
+requests (search/fetch/crawl) are capped at **50** by default
+(`SEEK_SERVE_MAX_CONCURRENT` or `--max-concurrent`); excess requests get **503**. `GET /healthz` is exempt
+so liveness probes stay reliable. The operation runners (`opSearch`/`opFetch`/`opCrawl` in `ops.go`)
 only *read* the factory, which is built once in `main()` and never mutated
 afterward, so concurrent requests are safe. Each `auto` call builds its own
 failover chain instance, so per-request attempt state never collides.
@@ -40,7 +42,8 @@ failover chain instance, so per-request attempt state never collides.
 ## Status codes
 
 `400` invalid request (bad JSON, missing field, bad date range) · `401`
-unauthorized · `502` provider error · `200` success.
+unauthorized · `502` provider error · `503` too many concurrent requests ·
+`200` success.
 
 ## Lifecycle
 

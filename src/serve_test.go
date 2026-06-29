@@ -8,6 +8,7 @@ import (
 
 	"github.com/rishang/seek/config"
 	"github.com/rishang/seek/provider"
+	"github.com/urfave/cli/v3"
 )
 
 // setupEmptyFactory points the package globals at a factory with no configured
@@ -85,6 +86,73 @@ func TestServeReachesProviderLayer(t *testing.T) {
 	}
 }
 
+func TestServeConcurrencyLimit(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 2)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		entered <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusOK)
+	})
+	h := withConcurrencyLimit(2, inner)
+
+	go func() {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/search", nil))
+	}()
+	go func() {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/search", nil))
+	}()
+	<-entered
+	<-entered
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/search", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("over cap: want 503, got %d", rec.Code)
+	}
+
+	close(release)
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("healthz bypass: want 200, got %d", rec.Code)
+	}
+}
+
+func TestServeMaxConcurrentFromEnv(t *testing.T) {
+	t.Setenv("SEEK_SERVE_MAX_CONCURRENT", "30")
+	cmd := &cli.Command{Flags: []cli.Flag{&cli.IntFlag{Name: "max-concurrent", Value: defaultMaxConcurrent}}}
+	n, err := serveMaxConcurrent(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 30 {
+		t.Fatalf("want 30 from env, got %d", n)
+	}
+}
+
+func TestServeMaxConcurrentFlagOverridesEnv(t *testing.T) {
+	t.Setenv("SEEK_SERVE_MAX_CONCURRENT", "30")
+	cmd := &cli.Command{Flags: []cli.Flag{&cli.IntFlag{Name: "max-concurrent", Value: defaultMaxConcurrent}}}
+	if err := cmd.Set("max-concurrent", "10"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := serveMaxConcurrent(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 10 {
+		t.Fatalf("want 10 from flag, got %d", n)
+	}
+}
+
 func TestIsLoopback(t *testing.T) {
 	cases := map[string]bool{
 		"127.0.0.1:8787": true,
@@ -99,7 +167,4 @@ func TestIsLoopback(t *testing.T) {
 			t.Errorf("isLoopback(%q) = %v, want %v", addr, got, want)
 		}
 	}
-}
-
-func TestDocsRoutesServe(t *testing.T) {
 }
