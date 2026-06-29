@@ -1,0 +1,14 @@
+{
+  "name": "seek",
+  "version": "0.1.0",
+  "description": "Live web access for CLI coding agents — 8 providers, automatic failover. Auto-installs the seek binary and registers the web-fetch skill.",
+  "keywords": ["pi-package"],
+  "repository": "github.com/Rishang/seek",
+  "author": "Rishang",
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "image": "https://raw.githubusercontent.com/Rishang/seek/main/assets/logo.png"
+  }
+}

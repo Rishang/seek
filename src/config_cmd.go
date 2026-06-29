@@ -289,19 +289,21 @@ func pickDefault(cur string, opts []string, fallback string) string {
 	return fallback
 }
 
-// runInitForm drives the whole interactive init as a single huh form so the
-// user can step backward (shift+tab) across every stage. Stages:
-//  1. multi-select which providers to configure (pre-checked from creds);
-//  2. a per-provider group (key, plus host for OSS providers) shown only while
-//     that provider is selected in stage 1;
-//  3. operation settings whose provider options are "auto" plus every capable
-//     provider (from the registry); then cache settings and overwrite confirm.
+// runInitForm drives the interactive init as two huh forms:
+//
+//  1. Providers: a multi-select of which providers to configure (pre-checked
+//     from creds), followed by a per-provider group (key, plus host for OSS
+//     providers) shown only while that provider is selected.
+//  2. Settings: operation defaults, cache settings, and the overwrite confirm.
+//
+// Two forms (not one) so the settings stage can offer only the providers just
+// configured: the search/fetch/crawl dropdowns list "auto" plus the providers
+// selected in form 1. An unconfigured provider can't run, so offering it as a
+// default would be a dead end. A single live-filtered form would need dynamic
+// select options, which huh can't size to their content (blank-gap rendering);
+// splitting the forms keeps the option lists static and correct.
 //
 // It mutates c and creds in place and returns false when the user cancels.
-// Stage-3 offers the full capable set rather than only configured providers, so
-// a key added in stage 2 (or a newly supported provider) is selectable right
-// away. Picking a provider with no key is allowed; it simply won't resolve at
-// runtime until a key is set.
 func runInitForm(c *config.Config, creds map[string]config.Credential, path string, assumeYes bool) (bool, error) {
 	selected := configuredNames(creds)
 	selectedSet := func() map[string]bool {
@@ -312,33 +314,13 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 		return m
 	}
 
-	// Stage-2 bindings, pre-filled from existing creds. Built for every provider
+	// Form-1 bindings, pre-filled from existing creds. Built for every provider
 	// up front (stable pointers); groups are hidden unless the provider is picked.
 	keyVals := map[string]*string{}
 	hostVals := map[string]*string{}
 
-	// Stage-3 option lists: "auto" plus every capable provider, derived from the
-	// provider registry (the source of truth). Showing the full capable set —
-	// rather than only providers with a key already on disk — means a provider you
-	// add a key for in this same session (stage 2) is immediately selectable here,
-	// and newly supported providers always appear. Lists are static, so each
-	// select sizes to its own option count (no OptionsFunc height padding).
-	searchOpts := append([]string{"auto"}, searchProviders...)
-	fetchOpts := append([]string{"auto"}, fetchProviders...)
-	crawlOpts := crawlProviders // crawl has no "auto"
-
-	// Stage-3 bindings, clamped to the option lists above.
-	searchP := pickDefault(orValue(c.Search.Provider, "auto"), searchOpts, "auto")
-	fetchP := pickDefault(orValue(c.Fetch.Provider, "auto"), fetchOpts, "auto")
-	crawlP := pickDefault(orValue(c.Crawl.Provider, crawlOpts[0]), crawlOpts, crawlOpts[0])
-	format := orValue(string(c.Fetch.Options.OutputFormat), "markdown")
-	fetchCache := c.Fetch.Cache.IsEnabled()
-	crawlCache := c.Crawl.Cache.IsEnabled()
-	ttlDays := strconv.Itoa(effectiveTTLDays(c.Fetch.Cache))
-	confirm := true
-
-	// Stage 1: which providers to configure.
-	groups := []*huh.Group{
+	// Form 1: which providers to configure, then their keys.
+	provGroups := []*huh.Group{
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Providers to configure").
@@ -347,8 +329,6 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 				Value(&selected),
 		),
 	}
-
-	// Stage 2: one hidden-until-selected group per provider.
 	for _, p := range providerEnv {
 		name := p.Name
 		k := creds[name].APIKey
@@ -362,22 +342,57 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 			hostVals[name] = &h
 			fields = append(fields, huh.NewInput().Title(name+" host").Value(hostVals[name]))
 		}
-		groups = append(groups, huh.NewGroup(fields...).
+		provGroups = append(provGroups, huh.NewGroup(fields...).
 			WithHideFunc(func() bool { return !selectedSet()[name] }))
 	}
+	if cancelled, err := runGroups(provGroups...); err != nil || cancelled {
+		return false, err
+	}
 
-	// Stage 3: settings.
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewSelect[string]().Title("Search provider").
-				Options(huh.NewOptions(searchOpts...)...).Value(&searchP),
-			huh.NewSelect[string]().Title("Fetch provider").
-				Options(huh.NewOptions(fetchOpts...)...).Value(&fetchP),
-			huh.NewSelect[string]().Title("Fetch output format").
-				Options(huh.NewOptions("markdown", "html", "json")...).Value(&format),
-			huh.NewSelect[string]().Title("Crawl provider").
-				Options(huh.NewOptions(crawlOpts...)...).Value(&crawlP),
-		),
+	// Persist the selection now so form 2's option lists reflect exactly what was
+	// just configured (creds is only saved by the caller on a true return, so a
+	// cancel in form 2 still writes nothing).
+	applyProviderSelection(creds, selectedSet(), keyVals, hostVals)
+
+	// Form-2 option lists: only providers that ended up configured (a key or host
+	// is present), plus "auto" where the operation supports it. A provider that
+	// was checked but left blank can't run, so it's excluded here just like an
+	// unselected one. Crawl has no "auto".
+	configured := map[string]bool{}
+	for _, n := range configuredNames(creds) {
+		configured[n] = true
+	}
+	searchOpts := append([]string{"auto"}, capableSubset(searchProviders, configured)...)
+	fetchOpts := append([]string{"auto"}, capableSubset(fetchProviders, configured)...)
+	crawlOpts := capableSubset(crawlProviders, configured)
+
+	searchP := pickDefault(orValue(c.Search.Provider, "auto"), searchOpts, "auto")
+	fetchP := pickDefault(orValue(c.Fetch.Provider, "auto"), fetchOpts, "auto")
+	format := orValue(string(c.Fetch.Options.OutputFormat), "markdown")
+	fetchCache := c.Fetch.Cache.IsEnabled()
+	crawlCache := c.Crawl.Cache.IsEnabled()
+	ttlDays := strconv.Itoa(effectiveTTLDays(c.Fetch.Cache))
+	confirm := true
+
+	settings := []huh.Field{
+		huh.NewSelect[string]().Title("Search provider").
+			Options(huh.NewOptions(searchOpts...)...).Value(&searchP),
+		huh.NewSelect[string]().Title("Fetch provider").
+			Options(huh.NewOptions(fetchOpts...)...).Value(&fetchP),
+		huh.NewSelect[string]().Title("Fetch output format").
+			Options(huh.NewOptions("markdown", "html", "json")...).Value(&format),
+	}
+	// Crawl has no "auto", so only offer it when a crawl-capable provider was
+	// configured; otherwise there's no valid default to pick.
+	var crawlP string
+	if len(crawlOpts) > 0 {
+		crawlP = pickDefault(orValue(c.Crawl.Provider, crawlOpts[0]), crawlOpts, crawlOpts[0])
+		settings = append(settings, huh.NewSelect[string]().Title("Crawl provider").
+			Options(huh.NewOptions(crawlOpts...)...).Value(&crawlP))
+	}
+
+	setGroups := []*huh.Group{
+		huh.NewGroup(settings...),
 		huh.NewGroup(
 			huh.NewConfirm().Title("Cache fetch results?").Value(&fetchCache),
 			huh.NewConfirm().Title("Cache crawl results?").Value(&crawlCache),
@@ -390,35 +405,26 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 					return nil
 				}),
 		),
-	)
+	}
 	if fileExists(path) && !assumeYes {
-		groups = append(groups, huh.NewGroup(
+		setGroups = append(setGroups, huh.NewGroup(
 			huh.NewConfirm().Title(fmt.Sprintf("Overwrite %s?", path)).Value(&confirm),
 		))
 	}
-
-	if err := huh.NewForm(groups...).Run(); err != nil {
-		if err == huh.ErrUserAborted {
-			return false, nil
-		}
+	if cancelled, err := runGroups(setGroups...); err != nil || cancelled {
 		return false, err
 	}
 	if !confirm {
 		return false, nil
 	}
 
-	// Write back credentials based on the stage-1 selection. The multi-select is
-	// pre-checked from existing creds, so a provider left selected keeps/updates
-	// its key, while a de-selected one is dropped from provider.yaml entirely
-	// (de-select == "remove this provider"). Empty selected entries are pruned
-	// later by pruneEmptyCreds.
-	applyProviderSelection(creds, selectedSet(), keyVals, hostVals)
-
 	// Write back settings. Each value was chosen from a static option list, so no
 	// post-hoc clamping is needed.
 	c.Search.Provider = searchP
 	c.Fetch.Provider = fetchP
-	c.Crawl.Provider = crawlP
+	if crawlP != "" {
+		c.Crawl.Provider = crawlP
+	}
 	c.Fetch.Options.OutputFormat = parseFormat(format)
 	setCacheEnabled(&c.Fetch.Cache, fetchCache)
 	setCacheEnabled(&c.Crawl.Cache, crawlCache)
@@ -454,6 +460,32 @@ func applyProviderSelection(creds map[string]config.Credential, selected map[str
 		}
 		creds[name] = cred
 	}
+}
+
+// capableSubset returns the providers in capable (preserving capable's order)
+// that are present in set. Used to scope the init settings dropdowns to the
+// providers that were actually configured, since an unconfigured provider
+// can't run.
+func capableSubset(capable []string, set map[string]bool) []string {
+	var out []string
+	for _, n := range capable {
+		if set[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// runGroups runs the given groups as one huh form, mapping a user-abort to a
+// clean cancel (cancelled=true, err=nil) and passing any other error through.
+func runGroups(groups ...*huh.Group) (cancelled bool, err error) {
+	if e := huh.NewForm(groups...).Run(); e != nil {
+		if e == huh.ErrUserAborted {
+			return true, nil
+		}
+		return false, e
+	}
+	return false, nil
 }
 
 // applyInitFlags overlays the non-interactive flag values onto c and creds.

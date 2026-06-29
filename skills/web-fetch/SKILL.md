@@ -35,6 +35,9 @@ seek fetch "<url>"             # one page → full markdown on stdout
 - **No `seek crawl` unless explicitly asked.** Crawl pulls many pages and blows the budget — for "check the docs"/lookups, one search and at most one fetch is enough.
 - Not for APIs or local files — use `curl`/`bash`/`read`.
 
+## Skip domains for `seek fetch` use `curl` instead
+- raw.githubusercontent.com
+
 ## Flags worth knowing but not often used(rarely required)
 - `seek search -o csv` — CSV instead of JSON (compact; columns `title,url,snippet,published_date`). Prefer it.
 - `-p firecrawl|tavily|spider.cloud|brave` (search) / `-p firecrawl|tavily|spider.cloud|webcrawlerapi|lightpanda` (fetch) — pin a provider.
