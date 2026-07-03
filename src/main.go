@@ -430,7 +430,7 @@ func loadConfig() config.Config {
 
 // setupCache opens the cache store (when enabled) and registers it for every
 // operation whose config enables caching. SEEK_CACHE=off disables everything.
-func setupCache() (*cache.Store, error) {
+func setupCache() (cache.Store, error) {
 	if os.Getenv("SEEK_CACHE") == "off" {
 		return nil, nil
 	}
@@ -448,11 +448,9 @@ func setupCache() (*cache.Store, error) {
 		return nil, nil
 	}
 
-	path := os.Getenv("SEEK_CACHE_DB")
-	if path == "" {
-		path = cache.DefaultPath()
-	}
-	store, err := cache.OpenSQLite(path)
+	// Resolve the backend: every cached op shares one store. Store name is read
+	// from the fetch op's config (crawl mirrors it; the config CLI sets both).
+	store, err := openStore(cfg.Fetch.Cache.Store)
 	if err != nil {
 		return nil, err
 	}
@@ -463,6 +461,29 @@ func setupCache() (*cache.Store, error) {
 		}
 	}
 	return store, nil
+}
+
+// openStore builds the cache backend named by the config. "s3" reads its
+// credentials from provider.yaml; anything else (including "") falls back to
+// the local SQLite database, honoring SEEK_CACHE_DB.
+func openStore(name string) (cache.Store, error) {
+	if name == "s3" {
+		creds, err := config.LoadCacheCreds(providersPath())
+		if err != nil {
+			return nil, fmt.Errorf("cache: load s3 creds: %w", err)
+		}
+		s := creds.S3
+		if s.IsZero() {
+			return nil, fmt.Errorf("cache: store is s3 but no cache.s3 config found in %s", providersPath())
+		}
+		return cache.OpenS3(s)
+	}
+
+	path := os.Getenv("SEEK_CACHE_DB")
+	if path == "" {
+		path = cache.DefaultPath()
+	}
+	return cache.OpenSQLite(path)
 }
 
 // ttlFor resolves an operation's TTL: SEEK_CACHE_TTL (global override) wins,

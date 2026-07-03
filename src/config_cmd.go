@@ -178,7 +178,7 @@ func configInitCmd() *cli.Command {
 			&cli.StringFlag{Name: "format", Usage: "Fetch output format: markdown, html, json"},
 			&cli.IntFlag{Name: "ttl", Usage: "Cache TTL in days (fetch & crawl)"},
 			&cli.BoolFlag{Name: "cache", Value: true, Usage: "Enable fetch/crawl caching (use --cache=false to disable)"},
-			&cli.StringFlag{Name: "store", Usage: "Cache backend (sqlite)"},
+			&cli.StringFlag{Name: "store", Usage: "Cache backend (sqlite, s3)"},
 			&cli.StringSliceFlag{Name: "key", Usage: "Provider API key as name=value (repeatable)"},
 			&cli.StringSliceFlag{Name: "host", Usage: "Provider host base URL as name=url (repeatable; OSS providers)"},
 			&cli.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Overwrite an existing file without prompting"},

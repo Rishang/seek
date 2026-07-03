@@ -11,8 +11,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Store is the SQLite-backed result cache. It is safe for concurrent use.
-type Store struct {
+// SQLiteStore is the SQLite-backed result cache. It is safe for concurrent use.
+type SQLiteStore struct {
 	db *sql.DB
 }
 
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS entries (
 );`
 
 // OpenSQLite opens (creating if needed) a SQLite-backed Store at path.
-func OpenSQLite(path string) (*Store, error) {
+func OpenSQLite(path string) (*SQLiteStore, error) {
 	if dir := filepath.Dir(path); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("cache: create dir: %w", err)
@@ -44,10 +44,10 @@ func OpenSQLite(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("cache: init schema: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &SQLiteStore{db: db}, nil
 }
 
-func (s *Store) Get(ctx context.Context, k Key) (Entry, bool, error) {
+func (s *SQLiteStore) Get(ctx context.Context, k Key) (Entry, bool, error) {
 	const q = `SELECT content, created_at, ttl FROM entries
 		WHERE op = ? AND provider = ? AND url = ? AND format = ?`
 
@@ -76,7 +76,7 @@ func (s *Store) Get(ctx context.Context, k Key) (Entry, bool, error) {
 	return Entry{Content: content, Format: k.Format}, true, nil
 }
 
-func (s *Store) Set(ctx context.Context, k Key, content string, ttl time.Duration) error {
+func (s *SQLiteStore) Set(ctx context.Context, k Key, content string, ttl time.Duration) error {
 	if ttl <= 0 {
 		ttl = DefaultTTL
 	}
@@ -95,10 +95,10 @@ func (s *Store) Set(ctx context.Context, k Key, content string, ttl time.Duratio
 	return nil
 }
 
-func (s *Store) delete(ctx context.Context, k Key) error {
+func (s *SQLiteStore) delete(ctx context.Context, k Key) error {
 	const q = `DELETE FROM entries WHERE op = ? AND provider = ? AND url = ? AND format = ?`
 	_, err := s.db.ExecContext(ctx, q, k.Op, k.Provider, k.URL, k.Format)
 	return err
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *SQLiteStore) Close() error { return s.db.Close() }

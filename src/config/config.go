@@ -45,7 +45,28 @@ type Credential struct {
 // providersFile is the on-disk shape of provider.yaml.
 type providersFile struct {
 	Providers map[string]Credential `yaml:"providers"`
+	Cache     CacheCreds            `yaml:"cache,omitempty"`
 }
+
+// CacheCreds holds credentials for cache backends that need them. It lives in
+// provider.yaml (0600) rather than config.yaml so secrets stay out of the
+// world-readable config.
+type CacheCreds struct {
+	S3 S3Config `yaml:"s3,omitempty"`
+}
+
+// S3Config configures an S3-compatible object store used as a cache backend.
+// Endpoint is optional and set only for non-AWS stores (MinIO, RustFS, ...).
+type S3Config struct {
+	Bucket    string `yaml:"bucket,omitempty"`
+	Region    string `yaml:"region,omitempty"`
+	Endpoint  string `yaml:"endpoint,omitempty"`
+	AccessKey string `yaml:"access_key,omitempty"`
+	SecretKey string `yaml:"secret_key,omitempty"`
+}
+
+// IsZero reports whether no S3 cache backend is configured.
+func (s S3Config) IsZero() bool { return s == S3Config{} }
 
 // ProvidersPath is the default credentials file location (~/.seek/provider.yaml).
 func ProvidersPath() string {
@@ -76,9 +97,28 @@ func LoadProviders(path string) (map[string]Credential, error) {
 	return f.Providers, nil
 }
 
+// LoadCacheCreds reads the cache backend credentials from provider.yaml,
+// returning a zero value when the file (or the cache section) is absent.
+func LoadCacheCreds(path string) (CacheCreds, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return CacheCreds{}, nil
+	}
+	if err != nil {
+		return CacheCreds{}, err
+	}
+	var f providersFile
+	if err := yaml.Unmarshal(data, &f); err != nil {
+		return CacheCreds{}, err
+	}
+	return f.Cache, nil
+}
+
 // SaveProviders writes provider.yaml with 0600 permissions (it holds secrets).
+// It preserves any existing cache section, which is edited out of band.
 func SaveProviders(path string, creds map[string]Credential) error {
-	data, err := marshalYAML(providersFile{Providers: creds})
+	cacheCreds, _ := LoadCacheCreds(path) // preserve cache section across saves
+	data, err := marshalYAML(providersFile{Providers: creds, Cache: cacheCreds})
 	if err != nil {
 		return err
 	}
