@@ -1,8 +1,10 @@
 // Package cache provides transparent caching of provider search, fetch, and
-// crawl results, backed by a local SQLite database.
+// crawl results. It ships two interchangeable backends: a local SQLite
+// database (the default) and an S3-compatible object store.
 package cache
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"time"
@@ -24,6 +26,14 @@ type Key struct {
 type Entry struct {
 	Content string
 	Format  string
+}
+
+// Store is a cache backend. Implementations must be safe for concurrent use
+// and should treat expiry lazily: a Get past the entry's TTL reports a miss.
+type Store interface {
+	Get(ctx context.Context, k Key) (Entry, bool, error)
+	Set(ctx context.Context, k Key, content string, ttl time.Duration) error
+	Close() error
 }
 
 // DefaultPath returns the default SQLite database location (~/.seek/cache.db).
