@@ -35,19 +35,19 @@ func serveCmd() *cli.Command {
 			"  POST /fetch  {\"url\":\"https://...\",\"format\":\"markdown\"}\n" +
 			"  POST /crawl   {\"url\":\"https://...\"}\n" +
 			"  GET  /healthz\n\n" +
-			"Auth: set --token (or SEEK_SERVE_TOKEN) to require `Authorization: Bearer\n" +
+			"Auth: set --token (or SEEK_AUTH_TOKEN) to require `Authorization: Bearer\n" +
 			"<token>` on every request. Without a token the API is UNAUTHENTICATED —\n" +
 			"anyone who can reach the address can spend your provider keys, so only\n" +
 			"bind a tokenless server to loopback.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "addr", Value: "127.0.0.1:8787", Usage: "Listen address (host:port)"},
-			&cli.StringFlag{Name: "token", Usage: "Require this Bearer token (or set SEEK_SERVE_TOKEN)"},
+			&cli.StringFlag{Name: "token", Usage: "Require this Bearer token (or set SEEK_AUTH_TOKEN)"},
 			&cli.IntFlag{Name: "max-concurrent", Value: defaultMaxConcurrent, Usage: "Max in-flight operation requests (or set SEEK_SERVE_MAX_CONCURRENT; GET /healthz is exempt)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			token := cmd.String("token")
 			if token == "" {
-				token = os.Getenv("SEEK_SERVE_TOKEN")
+				token = os.Getenv("SEEK_AUTH_TOKEN")
 			}
 			maxConcurrent, err := serveMaxConcurrent(cmd)
 			if err != nil {

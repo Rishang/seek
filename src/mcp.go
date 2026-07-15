@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -31,12 +32,24 @@ func mcpCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "mcp",
 		Usage:     "Run seek as an MCP server (stdio)",
-		UsageText: "seek mcp",
+		UsageText: "seek mcp [--token TOKEN]",
 		Description: "Speak the Model Context Protocol over stdio so MCP-capable agents can\n" +
 			"call seek's search, fetch, and crawl tools. stdout carries the JSON-RPC\n" +
-			"stream; logs go to stderr. Requests are handled concurrently.",
-		Action: func(ctx context.Context, _ *cli.Command) error {
-			return runMCP(ctx)
+			"stream; logs go to stderr. Requests are handled concurrently.\n\n" +
+			"Auth: set --token (or SEEK_AUTH_TOKEN) to require a matching token in the\n" +
+			"initialize handshake. Without a token the server is unauthenticated.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "token", Usage: "Require this token in the initialize handshake (or set SEEK_AUTH_TOKEN)"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			token := cmd.String("token")
+			if token == "" {
+				token = os.Getenv("SEEK_AUTH_TOKEN")
+			}
+			if token == "" {
+				logx.Warn("mcp: no token set — the server is UNAUTHENTICATED; anyone who can spawn it can use your provider keys")
+			}
+			return runMCP(ctx, token)
 		},
 	}
 }
@@ -45,11 +58,12 @@ func mcpCmd() *cli.Command {
 // goroutine, so a slow fetch never blocks other in-flight calls. Writes are
 // serialized by mcpConn; responses may arrive out of order (each carries its
 // request id, as JSON-RPC allows).
-func runMCP(ctx context.Context) error {
+func runMCP(ctx context.Context, token string) error {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // allow large request lines
 
 	conn := &mcpConn{enc: json.NewEncoder(os.Stdout)}
+	auth := &mcpAuth{}
 	var wg sync.WaitGroup
 
 	logx.Debug("mcp: ready, reading JSON-RPC from stdin")
@@ -62,12 +76,25 @@ func runMCP(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			handleMCPMessage(ctx, msg, conn)
+			handleMCPMessage(ctx, msg, conn, token, auth)
 		}()
 	}
 	wg.Wait()
 	logx.Debug("mcp: stdin closed, shutting down")
 	return sc.Err()
+}
+
+// mcpAuth tracks whether the connection has been authenticated via initialize.
+type mcpAuth struct {
+	mu sync.Mutex
+	ok bool
+}
+
+// ready reports whether the connection has been authenticated.
+func (a *mcpAuth) ready() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.ok
 }
 
 // mcpConn serializes writes to stdout. json.Encoder.Encode appends a newline,
@@ -102,7 +129,7 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func handleMCPMessage(ctx context.Context, line []byte, conn *mcpConn) {
+func handleMCPMessage(ctx context.Context, line []byte, conn *mcpConn, token string, auth *mcpAuth) {
 	var req rpcRequest
 	if err := json.Unmarshal(line, &req); err != nil {
 		logx.Debug("mcp: parse error: %v", err)
@@ -111,22 +138,31 @@ func handleMCPMessage(ctx context.Context, line []byte, conn *mcpConn) {
 		return
 	}
 	logx.Debug("mcp: <- method=%s id=%s", req.Method, string(req.ID))
-	if resp := dispatchMCP(ctx, &req); resp != nil {
+	if resp := dispatchMCP(ctx, &req, token, auth); resp != nil {
 		conn.send(resp)
 	}
 }
 
 // dispatchMCP routes a request to its handler. It returns nil for notifications
 // (requests without an id), which get no response.
-func dispatchMCP(ctx context.Context, req *rpcRequest) *rpcResponse {
+func dispatchMCP(ctx context.Context, req *rpcRequest, token string, auth *mcpAuth) *rpcResponse {
 	switch req.Method {
 	case "initialize":
-		return rpcOK(req.ID, initializeResult(req.Params))
+		return initializeAuth(req, token, auth)
 	case "ping":
+		if !auth.ready() {
+			return rpcErr(req.ID, -32600, "unauthorized: send initialize first")
+		}
 		return rpcOK(req.ID, obj{})
 	case "tools/list":
+		if !auth.ready() {
+			return rpcErr(req.ID, -32600, "unauthorized: send initialize first")
+		}
 		return rpcOK(req.ID, obj{"tools": mcpTools})
 	case "tools/call":
+		if !auth.ready() {
+			return rpcErr(req.ID, -32600, "unauthorized: send initialize first")
+		}
 		return toolsCall(ctx, req)
 	default:
 		if len(req.ID) == 0 {
@@ -136,19 +172,29 @@ func dispatchMCP(ctx context.Context, req *rpcRequest) *rpcResponse {
 	}
 }
 
-func initializeResult(params json.RawMessage) obj {
+// initializeAuth validates the client token and marks the connection authenticated.
+// Without a configured token, all clients are accepted.
+func initializeAuth(req *rpcRequest, token string, auth *mcpAuth) *rpcResponse {
 	version := mcpProtocolVersion
 	var p struct {
 		ProtocolVersion string `json:"protocolVersion"`
+		Token           string `json:"token"`
 	}
-	if json.Unmarshal(params, &p) == nil && p.ProtocolVersion != "" {
+	if json.Unmarshal(req.Params, &p) == nil && p.ProtocolVersion != "" {
 		version = p.ProtocolVersion
 	}
-	return obj{
+	if token != "" && subtle.ConstantTimeCompare([]byte(p.Token), []byte(token)) != 1 {
+		logx.Debug("mcp: auth rejected")
+		return rpcErr(req.ID, -32600, "unauthorized: invalid or missing token")
+	}
+	auth.mu.Lock()
+	auth.ok = true
+	auth.mu.Unlock()
+	return rpcOK(req.ID, obj{
 		"protocolVersion": version,
 		"capabilities":    obj{"tools": obj{}},
 		"serverInfo":      obj{"name": "seek", "version": mcpServerVersion},
-	}
+	})
 }
 
 // mcpTools is the tools/list payload. The three tools mirror the CLI commands;

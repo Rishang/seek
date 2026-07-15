@@ -41,6 +41,21 @@ Transport/protocol problems (bad params, unknown method) use the JSON-RPC
 as a normal result with `isError: true` and the message in a text content block,
 per MCP convention — so the model can see and react to the failure.
 
+## Auth
+
+`seek mcp` supports optional token authentication via the `--token` flag or
+`SEEK_AUTH_TOKEN` env var (shared with `seek serve`). When set, the client must
+send the token in the `initialize` request params:
+
+    {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","token":"<token>"}}
+
+The server validates the token using constant-time comparison (`crypto/subtle`).
+All other methods (`tools/list`, `tools/call`, `ping`) are rejected with
+`-32600 unauthorized` until a valid `initialize` completes.
+
+Without a token the server is unauthenticated — anyone who can spawn the
+process can use your provider keys. seek logs a warning at startup.
+
 ## Concurrency
 
 The reader loop is sequential (one stdin), but each request is dispatched in its
