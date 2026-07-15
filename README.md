@@ -334,7 +334,7 @@ Add to `~/.config/opencode/config.json` (or your project's `opencode.json`):
   "mcp": {
     "seek": {
       "command": "seek",
-      "args": ["mcp"]
+      "args": ["mcp", "--token", "${SEEK_AUTH_TOKEN}"]
     }
   }
 }
@@ -348,7 +348,7 @@ Open the Cline MCP settings (gear icon → MCP Servers) and add:
 {
   "seek": {
     "command": "seek",
-    "args": ["mcp"],
+    "args": ["mcp", "--token", "${SEEK_AUTH_TOKEN}"],
     "disabled": false
   }
 }
@@ -365,7 +365,7 @@ Create or edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "seek": {
       "command": "seek",
-      "args": ["mcp"]
+      "args": ["mcp", "--token", "${SEEK_AUTH_TOKEN}"]
     }
   }
 }
@@ -382,7 +382,7 @@ Add to `~/.gemini/antigravity-cli/mcp_config.json` (or `.agents/mcp_config.json`
   "mcpServers": {
     "seek": {
       "command": "seek",
-      "args": ["mcp"]
+      "args": ["mcp", "--token", "${SEEK_AUTH_TOKEN}"]
     }
   }
 }
@@ -410,7 +410,7 @@ The MCP config block is the same for every agent that speaks MCP (JSON-RPC 2.0 o
 ### HTTP API — Any custom tool or pipeline
 
 ```sh
-seek serve --addr 127.0.0.1:8787 --token "$SEEK_SERVE_TOKEN"
+seek serve --addr 127.0.0.1:8787 --token "$SEEK_AUTH_TOKEN"
 ```
 
 ```sh
@@ -487,6 +487,7 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 | `fetch` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o json\|csv`, `--no-cache` |
 | `serve` | `--addr host:port` (default `127.0.0.1:8787`), `--token` |
+| `mcp` | `--token` |
 | `config init` | `--search`, `--fetch`, `--crawl`, `--format`, `--ttl <days>`, `--key name=value`, `--host name=url`, `-y/--yes` |
 
 ---
@@ -537,6 +538,7 @@ seek config init --key firecrawl=fc-xxx --key tavily=tvly-xxx --yes
 | Variable | Effect |
 |---|---|
 | `<PROVIDER>_API_KEY` | Override stored key for that provider |
+| `SEEK_AUTH_TOKEN` | Shared auth token for `seek serve` and `seek mcp` (or use `--token` per command) |
 | `SEEK_CONFIG` | Path to `config.yaml` (default `~/.seek/config.yaml`) |
 | `SEEK_PROVIDERS` | Path to `provider.yaml` (default `~/.seek/provider.yaml`) |
 | `SEEK_CACHE=off` | Disable all caching globally |

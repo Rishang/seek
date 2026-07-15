@@ -30,7 +30,7 @@ failover chain instance, so per-request attempt state never collides.
 ## Security
 
 - Default bind is `127.0.0.1:8787` (loopback).
-- `--token` (or `SEEK_SERVE_TOKEN`) requires `Authorization: Bearer <token>` on
+- `--token` (or `SEEK_AUTH_TOKEN`) requires `Authorization: Bearer <token>` on
   the operation endpoints; comparison is constant-time (`crypto/subtle`).
 - With **no token the API is unauthenticated** — anyone who can reach the
   address can spend provider keys. seek logs a warning at startup, and an extra

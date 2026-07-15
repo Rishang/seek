@@ -22,7 +22,7 @@ EXPOSE 8787
 ENV SEEK_SERVE_MAX_CONCURRENT=50
 
 # Bind all interfaces so the port is reachable from outside the container.
-# Set SEEK_SERVE_TOKEN (or pass --token) before exposing this publicly.
+# Set SEEK_AUTH_TOKEN (or pass --token) before exposing this publicly.
 # Mount config at /home/seek/.seek or pass provider keys via env.
 ENTRYPOINT ["seek"]
 CMD ["serve", "--addr", "0.0.0.0:8787"]
