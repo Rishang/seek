@@ -428,7 +428,7 @@ curl -s localhost:8787/agent \
   -d '{"question": "golang errgroup cancel on first error"}'
 ```
 
-Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at `GET /healthz`
+Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 
 > ⚠️ Without `--token`, the API is unauthenticated — anyone who can reach the port can spend your provider keys. Always set a token, or bind to loopback only.
 
@@ -478,7 +478,7 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 | `seek crawl <url>` | Crawl a site and return its pages |
 | `seek agent <question>` | Fast cited answer: one search, then answers from the snippets or reads a few results. Also the `agent` MCP tool and `POST /agent`. `--deep` runs multi-turn research with seek's search/fetch as tools; fetched pages are distilled into deduped facts by a small model ([notes](notes/agent.md)) |
 | `seek mcp` | Start MCP server over stdio (JSON-RPC 2.0) |
-| `seek serve` | Start HTTP API with Swagger at `/docs` |
+| `seek serve` | Start HTTP API (`/search`, `/fetch`, `/crawl`, `/agent`) |
 | `seek config init` | Configure providers and API keys (interactive or `--yes` for scripting) |
 | `seek config view` | Show current config and which keys are set |
 | `seek version` | Print the seek version |
