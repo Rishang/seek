@@ -10,6 +10,9 @@ Module `github.com/rishang/seek`, rooted in `src/`. Go 1.25, `urfave/cli/v3`, `i
 - `src/provider/` — one file per provider + the capability interfaces and shared HTTP client.
 - `src/config/` — config.yaml + provider.yaml schemas and the value types shared across providers.
 - `src/cache/` — SQLite result cache (fetch/crawl only; search always hits the provider).
+- `src/agent/` — `seek agent`: shallow default (one search → answer from snippets) and
+  `--deep` tool-calling research loop (search/fetch wrappers as tools), both over an
+  OpenAI Chat Completions–compatible endpoint; CLI wiring in `src/agent_cmd.go`. See [`notes/agent.md`](notes/agent.md).
 - `src/logx/` — leveled stderr logger (`SEEK_LOG`). Keep stdout clean for piping.
 - `src/output.go` — `--output json|csv` rendering.
 - `notes/` — seek-side implementation notes. Read before changing providers:

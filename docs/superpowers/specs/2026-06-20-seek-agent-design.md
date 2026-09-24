@@ -1,6 +1,6 @@
 # seek agent — design
 
-**Status:** Draft for review
+**Status:** Superseded by [`notes/agent.md`](../../../notes/agent.md) (issue #4: fixed extract → dedupe → synthesize pipeline, no tool loop or memory)
 **Date:** 2026-06-20
 
 ## Summary

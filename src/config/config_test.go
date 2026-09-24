@@ -69,3 +69,25 @@ config:
 		t.Fatalf("crawl defaults not preserved: %+v", cfg.Crawl)
 	}
 }
+
+func TestSaveProvidersPreservesAgent(t *testing.T) {
+	path := writeConfig(t, `
+providers:
+  brave:
+    api_key: old
+agent:
+  base_url: http://localhost:8080/v1
+  model: big
+  extract_model: small
+`)
+	if err := SaveProviders(path, map[string]Credential{"exa": {APIKey: "k"}}); err != nil {
+		t.Fatalf("SaveProviders: %v", err)
+	}
+	a, err := LoadAgent(path)
+	if err != nil {
+		t.Fatalf("LoadAgent: %v", err)
+	}
+	if a.BaseURL != "http://localhost:8080/v1" || a.Model != "big" || a.ExtractModel != "small" {
+		t.Fatalf("agent section not preserved: %+v", a)
+	}
+}

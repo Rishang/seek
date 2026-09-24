@@ -34,7 +34,7 @@ func mcpCmd() *cli.Command {
 		Usage:     "Run seek as an MCP server (stdio)",
 		UsageText: "seek mcp [--token TOKEN]",
 		Description: "Speak the Model Context Protocol over stdio so MCP-capable agents can\n" +
-			"call seek's search, fetch, and crawl tools. stdout carries the JSON-RPC\n" +
+			"call seek's search, fetch, crawl, and agent tools. stdout carries the JSON-RPC\n" +
 			"stream; logs go to stderr. Requests are handled concurrently.\n\n" +
 			"Auth: set --token (or SEEK_AUTH_TOKEN) to require a matching token in the\n" +
 			"initialize handshake. Without a token the server is unauthenticated.",
@@ -197,7 +197,7 @@ func initializeAuth(req *rpcRequest, token string, auth *mcpAuth) *rpcResponse {
 	})
 }
 
-// mcpTools is the tools/list payload. The three tools mirror the CLI commands;
+// mcpTools is the tools/list payload. The tools mirror the CLI commands;
 // their argument shapes reuse the serve request structs.
 var mcpTools = []obj{
 	{
@@ -238,6 +238,19 @@ var mcpTools = []obj{
 				"provider": obj{"type": "string", "description": "Override provider; defaults to the configured one (firecrawl)"},
 			},
 			"required": []string{"url"},
+		},
+	},
+	{
+		"name":        "agent",
+		"description": "Answer a question from the web: searches, reads the few relevant pages, and returns one cited markdown answer with a sources list. Set deep for multi-step research (slower).",
+		"inputSchema": obj{
+			"type": "object",
+			"properties": obj{
+				"question":         obj{"type": "string", "description": "The question to answer"},
+				"deep":             obj{"type": "boolean", "description": "Deep research: several search/fetch turns (slower)"},
+				"reasoning_effort": obj{"type": "string", "description": "Override reasoning effort, e.g. low, medium, high"},
+			},
+			"required": []string{"question"},
 		},
 	},
 }
@@ -310,6 +323,17 @@ func callTool(ctx context.Context, name string, args json.RawMessage) (string, e
 			return "", err
 		}
 		return jsonString(result), nil
+
+	case "agent":
+		var a agentRequest
+		if err := json.Unmarshal(args, &a); err != nil {
+			return "", fmt.Errorf("invalid arguments: %w", err)
+		}
+		res, err := opAgent(ctx, a)
+		if err != nil {
+			return "", err
+		}
+		return res.Markdown(), nil
 	}
 	return "", fmt.Errorf("unknown tool %q", name)
 }

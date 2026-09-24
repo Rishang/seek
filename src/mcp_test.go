@@ -41,14 +41,14 @@ func TestMCPInitializeEchoesProtocolVersion(t *testing.T) {
 	}
 }
 
-func TestMCPToolsListHasThreeTools(t *testing.T) {
+func TestMCPToolsListHasAllTools(t *testing.T) {
 	resp := dispatchMCP(context.Background(), &rpcRequest{Method: "tools/list", ID: json.RawMessage("2")}, "", authed())
 	res := decodeResult(t, resp)
 	tools, ok := res["tools"].([]any)
-	if !ok || len(tools) != 3 {
-		t.Fatalf("want 3 tools, got %v", res["tools"])
+	if !ok || len(tools) != 4 {
+		t.Fatalf("want 4 tools, got %v", res["tools"])
 	}
-	want := map[string]bool{"search": false, "fetch": false, "crawl": false}
+	want := map[string]bool{"search": false, "fetch": false, "crawl": false, "agent": false}
 	for _, tl := range tools {
 		name := tl.(map[string]any)["name"].(string)
 		if _, ok := want[name]; !ok {
@@ -88,18 +88,20 @@ func TestMCPToolsCallBadParams(t *testing.T) {
 }
 
 func TestMCPToolsCallValidationReturnsIsError(t *testing.T) {
-	// search without a query: callTool errors before hitting any provider, so
-	// it comes back as a tool result with isError=true (not a protocol error).
-	resp := dispatchMCP(context.Background(), &rpcRequest{
-		Method: "tools/call", ID: json.RawMessage("5"),
-		Params: json.RawMessage(`{"name":"search","arguments":{}}`),
-	}, "", authed())
-	if resp == nil || resp.Error != nil {
-		t.Fatalf("want a result, got %+v", resp)
-	}
-	res := decodeResult(t, resp)
-	if res["isError"] != true {
-		t.Errorf("want isError=true, got %v", res["isError"])
+	// search without a query / agent without a question: callTool errors
+	// before hitting any provider, so it comes back as a tool result with
+	// isError=true (not a protocol error).
+	for _, tool := range []string{"search", "agent"} {
+		resp := dispatchMCP(context.Background(), &rpcRequest{
+			Method: "tools/call", ID: json.RawMessage("5"),
+			Params: json.RawMessage(`{"name":"` + tool + `","arguments":{}}`),
+		}, "", authed())
+		if resp == nil || resp.Error != nil {
+			t.Fatalf("%s: want a result, got %+v", tool, resp)
+		}
+		if res := decodeResult(t, resp); res["isError"] != true {
+			t.Errorf("%s: want isError=true, got %v", tool, res["isError"])
+		}
 	}
 }
 

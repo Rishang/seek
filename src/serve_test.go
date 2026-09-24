@@ -60,6 +60,13 @@ func TestServeValidation(t *testing.T) {
 		t.Fatalf("empty query: want 400, got %d", rec.Code)
 	}
 
+	// Missing question.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/agent", strings.NewReader(`{"deep":true}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty question: want 400, got %d", rec.Code)
+	}
+
 	// Unknown field is rejected.
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/fetch", strings.NewReader(`{"url":"x","bogus":1}`)))
