@@ -241,3 +241,9 @@ func TestClientComplete(t *testing.T) {
 		t.Fatalf("upstream-error retry = %+v, %v (calls %d)", msg, err, calls.Load())
 	}
 }
+
+func TestCleanAnswer(t *testing.T) {
+	if got := cleanAnswer(" a【1†L2-L3】 b[4†L9-L11] c[2] "); got != "a[1] b[4] c[2]" {
+		t.Fatalf("cleanAnswer = %q", got)
+	}
+}

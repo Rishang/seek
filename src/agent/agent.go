@@ -608,13 +608,14 @@ func normalize(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// fullwidthCite matches citations some models emit as 【n】 instead of [n].
-var fullwidthCite = regexp.MustCompile(`【(\d+)(?:†[^】]*)?】`)
+// fullwidthCite matches citations some models emit as 【n】 or [n†L1-L3]
+// (browsing-style line refs) instead of [n].
+var fullwidthCite = regexp.MustCompile(`(?:【(\d+)(?:†[^】]*)?】|\[(\d+)†[^\]]*\])`)
 
-// cleanAnswer trims the model's answer and normalizes 【n】 citations to [n],
-// so they match the ids in the sources footer.
+// cleanAnswer trims the model's answer and normalizes 【n】 and [n†…]
+// citations to [n], so they match the ids in the sources footer.
 func cleanAnswer(s string) string {
-	return strings.TrimSpace(fullwidthCite.ReplaceAllString(s, "[$1]"))
+	return strings.TrimSpace(fullwidthCite.ReplaceAllString(s, "[$1$2]"))
 }
 
 // Markdown renders the answer followed by a "---" separator and the sources

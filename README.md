@@ -405,7 +405,7 @@ The MCP config block is the same for every agent that speaks MCP (JSON-RPC 2.0 o
 }
 ```
 
-`seek mcp` exposes three tools — `search`, `fetch`, `crawl` — with the same provider failover as the CLI. The agent sees tools, not providers.
+`seek mcp` exposes four tools — `search`, `fetch`, `crawl`, and `agent` (a cited answer to a question; `deep: true` for multi-step research) — with the same provider failover as the CLI. The agent sees tools, not providers. `agent` needs the `agent:` block in provider.yaml.
 
 ### HTTP API — Any custom tool or pipeline
 
@@ -421,6 +421,11 @@ curl -s localhost:8787/search \
 curl -s localhost:8787/fetch \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"url": "https://go.dev/doc/devel/release", "format": "markdown"}'
+
+# cited answer: returns {answer, sources, markdown}; add "deep": true for research
+curl -s localhost:8787/agent \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"question": "golang errgroup cancel on first error"}'
 ```
 
 Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at `GET /healthz`
@@ -471,7 +476,7 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 | `seek search <query>` | Web search with auto-failover across providers |
 | `seek fetch <url>` | Fetch a page as markdown, html, or json |
 | `seek crawl <url>` | Crawl a site and return its pages |
-| `seek agent <question>` | Fast cited answer from one search's snippets. `--deep` runs multi-turn research with seek's search/fetch as tools; fetched pages are distilled into deduped facts by a small model ([notes](notes/agent.md)) |
+| `seek agent <question>` | Fast cited answer: one search, then answers from the snippets or reads a few results. Also the `agent` MCP tool and `POST /agent`. `--deep` runs multi-turn research with seek's search/fetch as tools; fetched pages are distilled into deduped facts by a small model ([notes](notes/agent.md)) |
 | `seek mcp` | Start MCP server over stdio (JSON-RPC 2.0) |
 | `seek serve` | Start HTTP API with Swagger at `/docs` |
 | `seek config init` | Configure providers and API keys (interactive or `--yes` for scripting) |

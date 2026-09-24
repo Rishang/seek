@@ -48,20 +48,11 @@ const (
 
 const budgetSpent = "Tool budget used up. Answer now from the results and pages you have."
 
-// datetimeTool returns the current local date and time (deep mode), so
-// time-sensitive answers aren't anchored to the model's training date.
-var datetimeTool = Tool{Type: "function", Function: ToolFunction{
-	Name:        "datetime",
-	Description: "Current local date, time and timezone. Use when the answer depends on today's date.",
-	Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
-}}
-
-// now formats the current time for the datetime tool.
-func now() string { return time.Now().Format("Monday, 2006-01-02 15:04 MST (UTC-07:00)") }
-
 // today is the system-prompt line that dates every request, so "latest" and
-// "today" questions need no extra tool turn.
-func today() string { return "Current date and time: " + now() + "." }
+// "today" answers aren't anchored to the model's training date.
+func today() string {
+	return "Current date and time: " + time.Now().Format("Monday, 2006-01-02 15:04 MST (UTC-07:00)") + "."
+}
 
 var shallowTools = []Tool{
 	{Type: "function", Function: ToolFunction{

@@ -12,7 +12,6 @@ import (
 const researchPrompt = `You are a deep-research agent. Answer the user's question by investigating the web with your tools.
 - search(query): returns result titles, URLs and snippets. Search several angles, follow leads, refine queries.
 - fetch(url, focus): reads a page and returns the facts relevant to focus, labelled with a source id [n].
-- datetime(): today's date and time; call it first when the question depends on what is current or recent.
 Plan, gather from multiple independent sources, cross-check claims that conflict, and stop once the question is well covered.
 Then reply without calling tools: one concise, information-dense markdown answer citing [n] after each statement.
 Cite only ids returned by fetch. Do not add a sources list and do not invent facts.`
@@ -42,7 +41,6 @@ var researchTools = []Tool{
 			"required": []string{"url"},
 		},
 	}},
-	datetimeTool,
 }
 
 // research is the state shared by concurrent tool calls within one run.
@@ -128,8 +126,6 @@ func (r *research) call(ctx context.Context, c ToolCall) (string, error) {
 		return "", fmt.Errorf("invalid arguments: %w", err)
 	}
 	switch c.Function.Name {
-	case "datetime":
-		return now(), nil
 	case "search":
 		if args.Query == "" {
 			return "", errors.New("query is required")
