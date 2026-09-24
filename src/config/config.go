@@ -46,6 +46,21 @@ type Credential struct {
 type providersFile struct {
 	Providers map[string]Credential `yaml:"providers"`
 	Cache     CacheCreds            `yaml:"cache,omitempty"`
+	Agent     AgentConfig           `yaml:"agent,omitempty"`
+}
+
+// AgentConfig configures `seek agent`. BaseURL is any OpenAI Chat
+// Completions–compatible endpoint; it lives in provider.yaml because it
+// carries the API key. ExtractModel is the small per-source model and falls
+// back to Model when empty. ReasoningEffort is sent with Model's requests only.
+type AgentConfig struct {
+	BaseURL         string `yaml:"base_url,omitempty"`
+	APIKey          string `yaml:"api_key,omitempty"`
+	Model           string `yaml:"model,omitempty"`
+	ExtractModel    string `yaml:"extract_model,omitempty"`
+	ReasoningEffort string `yaml:"reasoning_effort,omitempty"` // e.g. low | medium | high
+	Sources         int    `yaml:"sources,omitempty"`
+	MaxSteps        int    `yaml:"max_steps,omitempty"` // deep research turn cap
 }
 
 // CacheCreds holds credentials for cache backends that need them. It lives in
@@ -97,28 +112,57 @@ func LoadProviders(path string) (map[string]Credential, error) {
 	return f.Providers, nil
 }
 
+// loadProvidersFile reads provider.yaml, returning a zero value when the file
+// is absent.
+func loadProvidersFile(path string) (providersFile, error) {
+	var f providersFile
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return f, nil
+	}
+	if err != nil {
+		return f, err
+	}
+	err = yaml.Unmarshal(data, &f)
+	return f, err
+}
+
 // LoadCacheCreds reads the cache backend credentials from provider.yaml,
 // returning a zero value when the file (or the cache section) is absent.
 func LoadCacheCreds(path string) (CacheCreds, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return CacheCreds{}, nil
-	}
-	if err != nil {
-		return CacheCreds{}, err
-	}
-	var f providersFile
-	if err := yaml.Unmarshal(data, &f); err != nil {
-		return CacheCreds{}, err
-	}
-	return f.Cache, nil
+	f, err := loadProvidersFile(path)
+	return f.Cache, err
+}
+
+// LoadAgent reads the agent section from provider.yaml, returning a zero value
+// when the file (or the section) is absent.
+func LoadAgent(path string) (AgentConfig, error) {
+	f, err := loadProvidersFile(path)
+	return f.Agent, err
 }
 
 // SaveProviders writes provider.yaml with 0600 permissions (it holds secrets).
-// It preserves any existing cache section, which is edited out of band.
+// It preserves any existing cache and agent sections, which are edited out of
+// band.
 func SaveProviders(path string, creds map[string]Credential) error {
-	cacheCreds, _ := LoadCacheCreds(path) // preserve cache section across saves
-	data, err := marshalYAML(providersFile{Providers: creds, Cache: cacheCreds})
+	prev, _ := loadProvidersFile(path) // preserve cache/agent sections across saves
+	prev.Providers = creds
+	return writeProvidersFile(path, prev)
+}
+
+// SaveAgent replaces the agent section of provider.yaml (0600), keeping the
+// provider keys and cache section as they are.
+func SaveAgent(path string, a AgentConfig) error {
+	prev, err := loadProvidersFile(path)
+	if err != nil {
+		return err
+	}
+	prev.Agent = a
+	return writeProvidersFile(path, prev)
+}
+
+func writeProvidersFile(path string, f providersFile) error {
+	data, err := marshalYAML(f)
 	if err != nil {
 		return err
 	}

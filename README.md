@@ -471,6 +471,7 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 | `seek search <query>` | Web search with auto-failover across providers |
 | `seek fetch <url>` | Fetch a page as markdown, html, or json |
 | `seek crawl <url>` | Crawl a site and return its pages |
+| `seek agent <question>` | Fast cited answer from one search's snippets. `--deep` runs multi-turn research with seek's search/fetch as tools; fetched pages are distilled into deduped facts by a small model ([notes](notes/agent.md)) |
 | `seek mcp` | Start MCP server over stdio (JSON-RPC 2.0) |
 | `seek serve` | Start HTTP API with Swagger at `/docs` |
 | `seek config init` | Configure providers and API keys (interactive or `--yes` for scripting) |
@@ -486,9 +487,10 @@ Swagger UI at `GET /docs` · OpenAPI spec at `GET /openapi.json` · Liveness at 
 | `search` | `-p/--provider`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
 | `fetch` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o json\|csv`, `--no-cache` |
+| `agent` | `--deep`, `-e/--reasoning-effort low\|medium\|high`, `--sources N`, `--max-steps N`, `--model`, `--extract-model`, `-o markdown\|json`, `--no-cache` |
 | `serve` | `--addr host:port` (default `127.0.0.1:8787`), `--token` |
 | `mcp` | `--token` |
-| `config init` | `--search`, `--fetch`, `--crawl`, `--format`, `--ttl <days>`, `--key name=value`, `--host name=url`, `-y/--yes` |
+| `config init` | `--search`, `--fetch`, `--crawl`, `--format`, `--ttl <days>`, `--key name=value`, `--host name=url`, `--agent-base-url`, `--agent-key`, `--agent-model`, `--agent-extract-model`, `--agent-reasoning-effort`, `-y/--yes` |
 
 ---
 
@@ -523,6 +525,20 @@ providers:
     - brave
 ```
 
+`seek agent` reads an `agent:` block from `provider.yaml`. It works with any OpenAI Chat Completions–compatible endpoint. Set it up in the optional last step of `seek config init`, with the `--agent-*` flags, or by hand:
+
+```yaml
+# ~/.seek/provider.yaml
+agent:
+  base_url: https://api.openai.com/v1   # any OpenAI-compatible endpoint
+  api_key: sk-...                       # or SEEK_AGENT_API_KEY
+  model: gpt-5                          # synthesis
+  extract_model: gpt-5-nano             # --deep page extraction (defaults to model)
+  reasoning_effort: medium              # optional; sent with model's requests only
+  sources: 5                            # search results the shallow mode answers from
+  max_steps: 12                         # --deep turn cap
+```
+
 Non-interactive setup (great for CI or dotfiles):
 
 ```sh
@@ -538,6 +554,7 @@ seek config init --key firecrawl=fc-xxx --key tavily=tvly-xxx --yes
 | Variable | Effect |
 |---|---|
 | `<PROVIDER>_API_KEY` | Override stored key for that provider |
+| `SEEK_AGENT_API_KEY` | Override `agent.api_key` for `seek agent` |
 | `SEEK_AUTH_TOKEN` | Shared auth token for `seek serve` and `seek mcp` (or use `--token` per command) |
 | `SEEK_CONFIG` | Path to `config.yaml` (default `~/.seek/config.yaml`) |
 | `SEEK_PROVIDERS` | Path to `provider.yaml` (default `~/.seek/provider.yaml`) |

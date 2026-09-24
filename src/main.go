@@ -163,6 +163,7 @@ func main() {
 			searchCmd(),
 			fetchCmd(),
 			crawlCmd(),
+			agentCmd(),
 			serveCmd(),
 			mcpCmd(),
 			configCmd(),

@@ -111,6 +111,19 @@ func printEffectiveConfig(c config.Config, path string) {
 		fmt.Println(line)
 	}
 
+	if a, _ := config.LoadAgent(providersPath()); a != (config.AgentConfig{}) {
+		key := "missing"
+		if a.APIKey != "" || os.Getenv("SEEK_AGENT_API_KEY") != "" {
+			key = "set"
+		}
+		fmt.Println("\n  agent")
+		fmt.Printf("    base_url       %s\n", orValue(a.BaseURL, "(unset)"))
+		fmt.Printf("    model          %s\n", orValue(a.Model, "(unset)"))
+		fmt.Printf("    extract_model  %s\n", orValue(a.ExtractModel, "(same as model)"))
+		fmt.Printf("    reasoning      %s\n", orValue(a.ReasoningEffort, "(model default)"))
+		fmt.Printf("    key            %s\n", key)
+	}
+
 	fmt.Println()
 	fmt.Println("Edit:  seek config init")
 }
@@ -181,6 +194,11 @@ func configInitCmd() *cli.Command {
 			&cli.StringFlag{Name: "store", Usage: "Cache backend (sqlite, s3)"},
 			&cli.StringSliceFlag{Name: "key", Usage: "Provider API key as name=value (repeatable)"},
 			&cli.StringSliceFlag{Name: "host", Usage: "Provider host base URL as name=url (repeatable; OSS providers)"},
+			&cli.StringFlag{Name: "agent-base-url", Usage: "seek agent: OpenAI-compatible endpoint (e.g. https://openrouter.ai/api/v1)"},
+			&cli.StringFlag{Name: "agent-key", Usage: "seek agent: API key for the endpoint"},
+			&cli.StringFlag{Name: "agent-model", Usage: "seek agent: main model"},
+			&cli.StringFlag{Name: "agent-extract-model", Usage: "seek agent: small model for query splits and --deep extraction (default: agent model)"},
+			&cli.StringFlag{Name: "agent-reasoning-effort", Usage: "seek agent: reasoning effort for the main model (low, medium, high; empty = model default)"},
 			&cli.BoolFlag{Name: "yes", Aliases: []string{"y"}, Usage: "Overwrite an existing file without prompting"},
 		},
 		Action: runConfigInit,
@@ -188,7 +206,8 @@ func configInitCmd() *cli.Command {
 }
 
 // initValueFlags are the flags that, when set, switch init to non-interactive.
-var initValueFlags = []string{"search", "fetch", "crawl", "format", "ttl", "cache", "store", "key", "host"}
+var initValueFlags = []string{"search", "fetch", "crawl", "format", "ttl", "cache", "store", "key", "host",
+	"agent-base-url", "agent-key", "agent-model", "agent-extract-model", "agent-reasoning-effort"}
 
 func anyInitFlagSet(cmd *cli.Command) bool {
 	for _, name := range initValueFlags {
@@ -217,12 +236,17 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	agentCfg, err := config.LoadAgent(provPath)
+	if err != nil {
+		return err
+	}
+	prevAgent := agentCfg
 
 	interactive := isatty.IsTerminal(os.Stdin.Fd()) && !anyInitFlagSet(cmd)
 	if interactive {
 		// One form, three stages (providers → keys → settings). Because it is a
 		// single huh form, shift+tab navigates back to any earlier step.
-		ok, err := runInitForm(&c, creds, cfgPath, cmd.Bool("yes"))
+		ok, err := runInitForm(&c, creds, &agentCfg, cfgPath, cmd.Bool("yes"))
 		if err != nil {
 			return err
 		}
@@ -234,6 +258,7 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 		if err := applyInitFlags(cmd, &c, creds); err != nil {
 			return err
 		}
+		applyAgentFlags(cmd, &agentCfg)
 		if fileExists(cfgPath) && !cmd.Bool("yes") {
 			return fmt.Errorf("%s already exists; pass --yes to overwrite", cfgPath)
 		}
@@ -254,7 +279,63 @@ func runConfigInit(ctx context.Context, cmd *cli.Command) error {
 		}
 		fmt.Printf("Wrote %s\n", provPath)
 	}
+	if agentCfg != prevAgent {
+		if err := config.SaveAgent(provPath, agentCfg); err != nil {
+			return err
+		}
+		fmt.Printf("Wrote agent settings to %s\n", provPath)
+	}
 	return nil
+}
+
+// applyAgentFlags overlays the --agent-* flags onto a.
+func applyAgentFlags(cmd *cli.Command, a *config.AgentConfig) {
+	for flag, dst := range map[string]*string{
+		"agent-base-url":         &a.BaseURL,
+		"agent-key":              &a.APIKey,
+		"agent-model":            &a.Model,
+		"agent-extract-model":    &a.ExtractModel,
+		"agent-reasoning-effort": &a.ReasoningEffort,
+	} {
+		if cmd.IsSet(flag) {
+			*dst = cmd.String(flag)
+		}
+	}
+}
+
+// agentGroups is the optional last step of the interactive init: a confirm,
+// then the agent fields, shown only when confirmed. Declining leaves any
+// existing agent settings untouched.
+func agentGroups(a *config.AgentConfig, enable *bool) []*huh.Group {
+	required := func(what string) func(string) error {
+		return func(s string) error {
+			if *enable && strings.TrimSpace(s) == "" {
+				return fmt.Errorf("%s is required", what)
+			}
+			return nil
+		}
+	}
+	efforts := []huh.Option[string]{
+		huh.NewOption("model default", ""), huh.NewOption("low", "low"),
+		huh.NewOption("medium", "medium"), huh.NewOption("high", "high"),
+	}
+	return []*huh.Group{
+		huh.NewGroup(huh.NewConfirm().
+			Title("Configure the LLM agent (seek agent)?").
+			Description("Optional. Any OpenAI Chat Completions–compatible endpoint.").
+			Value(enable)),
+		huh.NewGroup(
+			huh.NewInput().Title("Agent base URL").Placeholder("https://openrouter.ai/api/v1").
+				Value(&a.BaseURL).Validate(required("base URL")),
+			huh.NewInput().Title("Agent API key").Description("blank for endpoints that need none; SEEK_AGENT_API_KEY overrides").
+				EchoMode(huh.EchoModePassword).Value(&a.APIKey),
+			huh.NewInput().Title("Agent model").Placeholder("openai/gpt-oss-120b").
+				Value(&a.Model).Validate(required("model")),
+			huh.NewInput().Title("Extract model").Description("small model for query splits and --deep; blank = same as agent model").
+				Value(&a.ExtractModel),
+			huh.NewSelect[string]().Title("Reasoning effort").Options(efforts...).Value(&a.ReasoningEffort),
+		).WithHideFunc(func() bool { return !*enable }),
+	}
 }
 
 // allProviderNames lists every known provider in declaration order.
@@ -304,7 +385,7 @@ func pickDefault(cur string, opts []string, fallback string) string {
 // splitting the forms keeps the option lists static and correct.
 //
 // It mutates c and creds in place and returns false when the user cancels.
-func runInitForm(c *config.Config, creds map[string]config.Credential, path string, assumeYes bool) (bool, error) {
+func runInitForm(c *config.Config, creds map[string]config.Credential, agentCfg *config.AgentConfig, path string, assumeYes bool) (bool, error) {
 	selected := configuredNames(creds)
 	selectedSet := func() map[string]bool {
 		m := make(map[string]bool, len(selected))
@@ -406,6 +487,9 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 				}),
 		),
 	}
+	draft := *agentCfg // edits apply only if the step is confirmed and the form completes
+	enableAgent := agentCfg.Model != ""
+	setGroups = append(setGroups, agentGroups(&draft, &enableAgent)...)
 	if fileExists(path) && !assumeYes {
 		setGroups = append(setGroups, huh.NewGroup(
 			huh.NewConfirm().Title(fmt.Sprintf("Overwrite %s?", path)).Value(&confirm),
@@ -416,6 +500,9 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, path stri
 	}
 	if !confirm {
 		return false, nil
+	}
+	if enableAgent {
+		*agentCfg = draft
 	}
 
 	// Write back settings. Each value was chosen from a static option list, so no
