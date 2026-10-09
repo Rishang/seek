@@ -83,6 +83,27 @@ func opCrawl(ctx context.Context, providerName, url string) (*config.CrawlResult
 	return result, nil
 }
 
+// opTranscribe runs a transcribe. An empty providerName uses the configured
+// default.
+func opTranscribe(ctx context.Context, providerName, url, lang string) (*config.FetchResult, error) {
+	if providerName == "" {
+		providerName = cfg.Transcribe.Provider
+	}
+	logx.Debug("op: transcribe provider=%s url=%q lang=%s", providerName, url, lang)
+	tp, err := factory.Transcribe(providerName)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tp.Transcribe(ctx, url, lang)
+	logAutoAttempts(tp)
+	if err != nil {
+		logx.Debug("op: transcribe failed: %v", err)
+		return nil, err
+	}
+	logx.Debug("op: transcribe ok, %d bytes", len(result.Content))
+	return result, nil
+}
+
 // fmtRange renders a time range compactly for debug logs.
 func fmtRange(tr config.TimeRange) string {
 	if tr.IsZero() {

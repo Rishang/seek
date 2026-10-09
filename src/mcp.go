@@ -241,6 +241,19 @@ var mcpTools = []obj{
 		},
 	},
 	{
+		"name":        "transcribe",
+		"description": "Transcript of a video URL (YouTube, TikTok, Instagram, X, or a direct media file). Returns the transcript text, or the video page as markdown with a transcript section, depending on the provider.",
+		"inputSchema": obj{
+			"type": "object",
+			"properties": obj{
+				"url":      obj{"type": "string", "description": "Video page or media file URL"},
+				"provider": obj{"type": "string", "description": "Override provider; defaults to the configured one (auto)"},
+				"lang":     obj{"type": "string", "description": "Preferred ISO 639-1 language, e.g. en"},
+			},
+			"required": []string{"url"},
+		},
+	},
+	{
 		"name":        "agent",
 		"description": "Answer a question from the web: searches, reads the few relevant pages, and returns one cited markdown answer with a sources list. Set deep for multi-step research (slower).",
 		"inputSchema": obj{
@@ -323,6 +336,20 @@ func callTool(ctx context.Context, name string, args json.RawMessage) (string, e
 			return "", err
 		}
 		return jsonString(result), nil
+
+	case "transcribe":
+		var a transcribeRequest
+		if err := json.Unmarshal(args, &a); err != nil {
+			return "", fmt.Errorf("invalid arguments: %w", err)
+		}
+		if a.URL == "" {
+			return "", fmt.Errorf("url is required")
+		}
+		result, err := opTranscribe(ctx, a.Provider, a.URL, a.Lang)
+		if err != nil {
+			return "", err
+		}
+		return result.Content, nil
 
 	case "agent":
 		var a agentRequest

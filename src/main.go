@@ -132,6 +132,7 @@ func main() {
 	factory = loadProviders()
 	factory.SetAutoChain("search", autoCandidates("search", cfg.Priority))
 	factory.SetAutoChain("fetch", autoCandidates("fetch", cfg.Priority))
+	factory.SetAutoChain("transcribe", autoCandidates("transcribe", cfg.Priority))
 
 	store, err := setupCache()
 	if err != nil {
@@ -151,7 +152,7 @@ func main() {
 		Name:        "seek",
 		Version:     version,
 		Usage:       "The OpenRouter for web search",
-		Description: "Run web search, fetch, and crawl across pluggable providers.\n\nDocs: " + readmeURL,
+		Description: "Run web search, fetch, crawl, and transcribe across pluggable providers.\n\nDocs: " + readmeURL,
 		Flags:       []cli.Flag{verboseFlag},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			if cmd.Bool("verbose") {
@@ -163,6 +164,7 @@ func main() {
 			searchCmd(),
 			fetchCmd(),
 			crawlCmd(),
+			transcribeCmd(),
 			agentCmd(),
 			serveCmd(),
 			mcpCmd(),
@@ -236,6 +238,8 @@ func capabilityProviders(op string) []string {
 		return fetchProviders
 	case "crawl":
 		return crawlProviders
+	case "transcribe":
+		return transcribeProviders
 	}
 	return nil
 }
@@ -410,6 +414,29 @@ func crawlCmd() *cli.Command {
 				return err
 			}
 			return render(cmd, result)
+		},
+	}
+}
+
+func transcribeCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "transcribe",
+		Usage:     "Get the transcript of a video URL (YouTube, TikTok, X, media file, ...)",
+		UsageText: "seek transcribe [-p provider] [-l lang] <url>",
+		Flags: []cli.Flag{
+			providerFlag(providerUsage(provider.CapTranscribe, true)),
+			&cli.StringFlag{Name: "lang", Aliases: []string{"l"}, Usage: "Preferred ISO 639-1 language (e.g. en)"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.NArg() < 1 {
+				return fmt.Errorf("url required")
+			}
+			result, err := opTranscribe(ctx, cmd.String("provider"), cmd.Args().First(), cmd.String("lang"))
+			if err != nil {
+				return err
+			}
+			fmt.Println(result.Content)
+			return nil
 		},
 	}
 }

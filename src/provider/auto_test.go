@@ -35,6 +35,11 @@ func (s fakeFetch) Fetch(_ context.Context, url string, _ config.FetchOptions) (
 	return &config.FetchResult{URL: url, Content: s.content}, nil
 }
 
+// fakeFetch doubles as a transcriber so the transcribe chain can reuse it.
+func (s fakeFetch) Transcribe(ctx context.Context, url, _ string) (*config.FetchResult, error) {
+	return s.Fetch(ctx, url, config.FetchOptions{})
+}
+
 func hit(n int) []config.SearchResult {
 	return make([]config.SearchResult, n)
 }
@@ -102,5 +107,17 @@ func TestAutoSearchSupportsTimeRangeIfAnyMemberDoes(t *testing.T) {
 	a := newAutoSearch([]autoSearchEntry{{"a", fakeSearch{name: "a"}}})
 	if a.SupportsTimeRange() {
 		t.Error("no member supports time range; want false")
+	}
+}
+
+func TestAutoTranscribeFailsOverOnErrorAndEmpty(t *testing.T) {
+	a := newAutoTranscribe([]autoTranscribeEntry{
+		{"a", fakeFetch{name: "a", err: errors.New("401")}},
+		{"b", fakeFetch{name: "b", content: ""}},
+		{"c", fakeFetch{name: "c", content: "transcript"}},
+	})
+	res, err := a.Transcribe(context.Background(), "http://x", "")
+	if err != nil || res.Content != "transcript" || len(a.Attempts()) != 3 {
+		t.Fatalf("res=%v err=%v attempts=%v", res, err, a.Attempts())
 	}
 }

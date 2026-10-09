@@ -28,6 +28,13 @@ type CrawlProvider interface {
 	Crawl(ctx context.Context, url string) (*config.CrawlResult, error)
 }
 
+// TranscribeProvider returns the spoken-word transcript of a video URL
+// (YouTube, TikTok, a direct media file, ...). lang is an optional ISO 639-1
+// preference; providers fall back to the first available language.
+type TranscribeProvider interface {
+	Transcribe(ctx context.Context, url, lang string) (*config.FetchResult, error)
+}
+
 // Provider is any registered provider. The concrete capabilities (search,
 // fetch, crawl) are probed by type-asserting to the interfaces above, so a
 // provider need only implement whichever it supports.

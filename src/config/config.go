@@ -182,6 +182,8 @@ type Config struct {
 	Fetch  Operation `yaml:"fetch"`
 	Crawl  Operation `yaml:"crawl"`
 
+	Transcribe Operation `yaml:"transcribe"`
+
 	// Priority is the global "auto" try-order (index 0 = highest priority),
 	// filtered to capable+configured providers at runtime. It lives under the
 	// top-level "providers.priority" key, not under "config", hence yaml:"-".
@@ -190,8 +192,12 @@ type Config struct {
 
 // DefaultPriority is the built-in "auto" try-order, used when config.yaml does
 // not set providers.priority. Index 0 is highest priority.
+//
+// supadata leads because it only transcribes, and it is the one transcriber
+// with an ASR fallback; page-scrape transcribers (tavily, firecrawl) return the
+// page even when a video has no captions, which would end the chain early.
 var DefaultPriority = []string{
-	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave", "perplexity",
+	"supadata", "tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave", "perplexity",
 }
 
 // Operation configures a single capability (search, fetch, or crawl).
@@ -285,6 +291,8 @@ func Default() Config {
 		Search: Operation{Provider: "auto"},
 		Fetch:  Operation{Provider: "auto", Cache: enabledCache(), Options: FetchOptions{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
+
+		Transcribe: Operation{Provider: "auto"},
 
 		Priority: append([]string(nil), DefaultPriority...),
 	}

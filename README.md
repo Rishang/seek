@@ -5,7 +5,7 @@
 <h1 align="center">seek</h1>
 
 <p align="center">
-  <strong>Live web access for CLI coding agents — 8 providers, one command, automatic failover.</strong>
+  <strong>Live web access for CLI coding agents — 9 providers, one command, automatic failover.</strong>
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@ Your coding agent needs the current version of a library. The docs that changed 
 
 So you hand it a search provider key — and then it rate-limits. Or expires. Or the agent stalls mid-task, waiting on a 401 it doesn't know how to recover from.
 
-**seek fixes this.** It sits in front of 7 search/fetch/crawl providers and fails over silently. Your agent calls `seek search`. If Tavily is rate-limited, Exa answers. If Exa is down, Firecrawl answers. The agent sees a result, never an error.
+**seek fixes this.** It sits in front of 9 search/fetch/crawl/transcribe providers and fails over silently. Your agent calls `seek search`. If Tavily is rate-limited, Exa answers. If Exa is down, Firecrawl answers. The agent sees a result, never an error.
 
 ---
 
@@ -405,7 +405,7 @@ The MCP config block is the same for every agent that speaks MCP (JSON-RPC 2.0 o
 }
 ```
 
-`seek mcp` exposes four tools — `search`, `fetch`, `crawl`, and `agent` (a cited answer to a question; `deep: true` for multi-step research) — with the same provider failover as the CLI. The agent sees tools, not providers. `agent` needs the `agent:` block in provider.yaml.
+`seek mcp` exposes five tools — `search`, `fetch`, `crawl`, `transcribe` (video URL → transcript), and `agent` (a cited answer to a question; `deep: true` for multi-step research) — with the same provider failover as the CLI. The agent sees tools, not providers. `agent` needs the `agent:` block in provider.yaml.
 
 ### HTTP API — Any custom tool or pipeline
 
@@ -421,6 +421,11 @@ curl -s localhost:8787/search \
 curl -s localhost:8787/fetch \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"url": "https://go.dev/doc/devel/release", "format": "markdown"}'
+
+# video transcript: returns {url, content, format}
+curl -s localhost:8787/transcribe \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"url": "https://www.youtube.com/watch?v=ACAd_w3D-io", "lang": "en"}'
 
 # cited answer: returns {answer, sources, markdown}; add "deep": true for research
 curl -s localhost:8787/agent \
@@ -450,22 +455,46 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 
 ## 🌐 Providers
 
-8 providers, one interface. Configure one or all — `auto` uses whatever has a key.
+9 providers, one interface. Configure one or all — `auto` uses whatever has a key.
 
-| Provider | search | fetch | crawl | Key env var |
-|---|---|---|---|---|
-| firecrawl | ✓ | ✓ | ✓ | `FIRECRAWL_API_KEY` |
-| tavily | ✓ | ✓ | ✓ | `TAVILY_API_KEY` |
-| spider.cloud | ✓ | ✓ | ✓ | `SPIDER_API_KEY` |
-| exa | ✓ | ✓ | — | `EXA_API_KEY` |
-| perplexity | ✓ | — | — | `PERPLEXITY_API_KEY` |
-| brave | ✓ | — | — | `BRAVE_API_KEY` |
-| webcrawlerapi | — | ✓ | ✓ | `WEBCRAWLERAPI_API_KEY` |
-| lightpanda | — | ✓ | — | `LIGHTPANDA_API_KEY` |
+| Provider | search | fetch | crawl | transcribe | Key env var |
+|---|---|---|---|---|---|
+| firecrawl | ✓ | ✓ | ✓ | ✓ (captions) | `FIRECRAWL_API_KEY` |
+| tavily | ✓ | ✓ | ✓ | ✓ (captions) | `TAVILY_API_KEY` |
+| spider.cloud | ✓ | ✓ | ✓ | — | `SPIDER_API_KEY` |
+| exa | ✓ | ✓ | — | — | `EXA_API_KEY` |
+| perplexity | ✓ | — | — | — | `PERPLEXITY_API_KEY` |
+| brave | ✓ | — | — | — | `BRAVE_API_KEY` |
+| webcrawlerapi | — | ✓ | ✓ | — | `WEBCRAWLERAPI_API_KEY` |
+| lightpanda | — | ✓ | — | — | `LIGHTPANDA_API_KEY` |
+| supadata | — | — | — | ✓ (captions + AI) | `SUPADATA_API_KEY` |
 
 `firecrawl` and `lightpanda` are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
 
-**Auto priority order:** `tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → brave → perplexity`. Reorder in `config.yaml` to change preference; index 0 wins. `perplexity` is last by default since its search quality is more variable for general queries.
+**Auto priority order:** `supadata → tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → brave → perplexity`. Reorder in `config.yaml` to change preference; index 0 wins. `perplexity` is last by default since its search quality is more variable for general queries. `supadata` leads because it only transcribes (it never competes for search/fetch) and is the one transcriber that falls back to AI speech-to-text.
+
+### 🎬 Transcribe
+
+`seek transcribe <url>` returns the spoken-word transcript of a video — paste the page URL, no download step.
+
+| Provider | Accepts | Videos without captions |
+|---|---|---|
+| supadata | YouTube, TikTok, Instagram, X, Facebook, direct media file URLs | AI transcription (long videos run as a polled job) |
+| tavily | Video pages (tested on YouTube) | Page only — title, description, chapters |
+| firecrawl | Video pages (YouTube) | Page only — title, description |
+
+`supadata` returns plain transcript text. `tavily` and `firecrawl` return the page as markdown with the transcript inside (tavily: a timestamped `### Transcript` section) — which also gives you the title, description, and chapters for free.
+
+```sh
+seek transcribe 'https://www.youtube.com/watch?v=ACAd_w3D-io'      # auto: first configured transcriber wins
+seek transcribe -p supadata -l en 'https://www.tiktok.com/@user/video/123'
+seek transcribe -p tavily 'https://youtu.be/ACAd_w3D-io' > talk.md
+seek config init --transcribe supadata --yes                       # pin a default
+```
+
+Also available as the `transcribe` MCP tool (`{url, provider?, lang?}`) and `POST /transcribe` on `seek serve`.
+
+Quote the URL — `?` in YouTube links is a glob in zsh. If your `config.yaml` sets its own `priority:` list, add `supadata` to it (first) so videos without captions reach the AI fallback; a page scraper otherwise "succeeds" with just the page.
 
 ---
 
@@ -476,9 +505,10 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 | `seek search <query>` | Web search with auto-failover across providers |
 | `seek fetch <url>` | Fetch a page as markdown, html, or json |
 | `seek crawl <url>` | Crawl a site and return its pages |
+| `seek transcribe <url>` | Transcript of a video URL (YouTube, TikTok, X, media files, …) — see [Transcribe](#-transcribe) |
 | `seek agent <question>` | Fast cited answer: one search, then answers from the snippets or reads a few results. Also the `agent` MCP tool and `POST /agent`. `--deep` runs multi-turn research with seek's search/fetch as tools; fetched pages are distilled into deduped facts by a small model ([notes](notes/agent.md)) |
 | `seek mcp` | Start MCP server over stdio (JSON-RPC 2.0) |
-| `seek serve` | Start HTTP API (`/search`, `/fetch`, `/crawl`, `/agent`) |
+| `seek serve` | Start HTTP API (`/search`, `/fetch`, `/crawl`, `/transcribe`, `/agent`) |
 | `seek config init` | Configure providers and API keys (interactive or `--yes` for scripting) |
 | `seek config view` | Show current config and which keys are set |
 | `seek version` | Print the seek version |
@@ -492,10 +522,11 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 | `search` | `-p/--provider`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
 | `fetch` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o json\|csv`, `--no-cache` |
+| `transcribe` | `-p/--provider`, `-l/--lang <ISO 639-1>` (supadata only) |
 | `agent` | `--deep`, `-e/--reasoning-effort low\|medium\|high`, `--sources N`, `--max-steps N`, `--model`, `--extract-model`, `-o markdown\|json`, `--no-cache` |
 | `serve` | `--addr host:port` (default `127.0.0.1:8787`), `--token` |
 | `mcp` | `--token` |
-| `config init` | `--search`, `--fetch`, `--crawl`, `--format`, `--ttl <days>`, `--key name=value`, `--host name=url`, `--agent-base-url`, `--agent-key`, `--agent-model`, `--agent-extract-model`, `--agent-reasoning-effort`, `-y/--yes` |
+| `config init` | `--search`, `--fetch`, `--crawl`, `--transcribe`, `--format`, `--ttl <days>`, `--key name=value`, `--host name=url`, `--agent-base-url`, `--agent-key`, `--agent-model`, `--agent-extract-model`, `--agent-reasoning-effort`, `-y/--yes` |
 
 ---
 
@@ -518,9 +549,12 @@ config:
       output_format: markdown
   crawl:
     provider: firecrawl
+  transcribe:
+    provider: auto
 
 providers:
   priority:             # index 0 = highest priority
+    - supadata
     - tavily
     - exa
     - firecrawl
@@ -552,7 +586,7 @@ seek config init --key firecrawl=fc-xxx --key tavily=tvly-xxx --yes
 
 ### Caching
 
-`fetch` and `crawl` results cache locally in SQLite. `search` always hits live. Bypass per-request with `--no-cache`.
+`fetch` and `crawl` results cache locally in SQLite. `search` and `transcribe` always hit live. Bypass per-request with `--no-cache`.
 
 ### Environment Variables
 
