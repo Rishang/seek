@@ -25,8 +25,9 @@ goes to stderr (package `logx`), so it never corrupts the stream.
 
 ### Tools
 
-- `search` — args `{query (required), provider?, range?, start?, end?}` → ranked
-  results as JSON text.
+- `search` — args `{query (required), provider?, range?, start?, end?, kind?}` → ranked
+  results as JSON text. `kind` is `web` (default), `news`, or `images`; image results
+  add `image_url`.
 - `fetch` — args `{url (required), provider?, format?}` → page content text.
 - `crawl`  — args `{url (required), provider?}` → crawl result as JSON text.
 - `transcribe` — args `{url (required), provider?, lang?}` → transcript text (or page markdown with a transcript section, for page-scrape providers).

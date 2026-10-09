@@ -47,9 +47,23 @@ func (a *autoSearch) SupportsTimeRange() bool {
 	return false
 }
 
+// SupportsKind reports true if any provider in the chain can run kind, so a
+// news/images search only fails up front when none can.
+func (a *autoSearch) SupportsKind(kind string) bool {
+	for _, e := range a.chain {
+		if SupportsKind(e.sp, kind) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *autoSearch) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	a.attempts = a.attempts[:0]
 	for _, e := range a.chain {
+		if !SupportsKind(e.sp, opts.Kind) {
+			continue // e.g. perplexity for an images search: not a failure, just not a candidate
+		}
 		res, err := e.sp.Search(ctx, query, opts)
 		if err != nil {
 			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: err})
@@ -154,6 +168,7 @@ var (
 	_ SearchProvider    = (*autoSearch)(nil)
 	_ AutoReporter      = (*autoSearch)(nil)
 	_ TimeRangeSearcher = (*autoSearch)(nil)
+	_ KindSearcher      = (*autoSearch)(nil)
 	_ FetchProvider     = (*autoFetch)(nil)
 	_ AutoReporter      = (*autoFetch)(nil)
 

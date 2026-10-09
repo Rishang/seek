@@ -263,10 +263,12 @@ func logAutoAttempts(p any) {
 func searchCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "search",
-		Usage:     "Run a web search",
-		UsageText: "seek search [-p provider] [--start DD/MM/YYYY] [--end DD/MM/YYYY] [--range N] <query>",
+		Usage:     "Run a web, news, or image search",
+		UsageText: "seek search [-p provider] [--news | --images] [--start DD/MM/YYYY] [--end DD/MM/YYYY] [--range N] <query>",
 		Flags: []cli.Flag{
 			providerFlag(providerUsage(provider.CapSearch, true)),
+			&cli.BoolFlag{Name: "news", Usage: "Search news articles: " + strings.Join(provider.NamesForKind(config.KindNews), ", ")},
+			&cli.BoolFlag{Name: "images", Usage: "Search images, adding image_url to each result: " + strings.Join(provider.NamesForKind(config.KindImages), ", ")},
 			&cli.StringFlag{Name: "start", Usage: "Only results published on/after this date (DD/MM/YYYY)"},
 			&cli.StringFlag{Name: "end", Usage: "Only results published on/before this date (DD/MM/YYYY)"},
 			&cli.IntFlag{Name: "range", Usage: "Only results from the last N days (today back N days)"},
@@ -288,6 +290,9 @@ func searchCmd() *cli.Command {
 			name := providerFor(cmd, cfg.Search.Provider)
 			sp, err := factory.Search(name)
 			if err != nil {
+				return err
+			}
+			if err := checkKind(sp, name, opts.Kind); err != nil {
 				return err
 			}
 			if !opts.TimeRange.IsZero() {
@@ -313,10 +318,19 @@ func parseDMY(s string) (time.Time, error) {
 	return time.Parse(dmyLayout, s)
 }
 
-// searchOptions builds the search-time options from the --start, --end, and
-// --range flags. --range sets both bounds (today back N days); explicit
-// --start/--end override the corresponding bound.
+// searchOptions builds the search options from the --news/--images and
+// --start, --end, --range flags. --range sets both bounds (today back N days);
+// explicit --start/--end override the corresponding bound.
 func searchOptions(cmd *cli.Command) (config.SearchOptions, error) {
+	kind := config.KindWeb
+	switch {
+	case cmd.Bool("news") && cmd.Bool("images"):
+		return config.SearchOptions{}, fmt.Errorf("--news and --images are mutually exclusive")
+	case cmd.Bool("news"):
+		kind = config.KindNews
+	case cmd.Bool("images"):
+		kind = config.KindImages
+	}
 	rangeDays := 0
 	if cmd.IsSet("range") {
 		rangeDays = int(cmd.Int("range"))
@@ -332,7 +346,7 @@ func searchOptions(cmd *cli.Command) (config.SearchOptions, error) {
 		logx.Debug("search time range: start=%s end=%s",
 			fmtDateOrOpen(tr.Start), fmtDateOrOpen(tr.End))
 	}
-	return config.SearchOptions{TimeRange: tr}, nil
+	return config.SearchOptions{TimeRange: tr, Kind: kind}, nil
 }
 
 func fmtDateOrOpen(t time.Time) string {

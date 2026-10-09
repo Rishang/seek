@@ -126,7 +126,7 @@ description: Search the web and fetch full page content via seek
 
 ```
 seek search -o csv "<query>"
-# output: title,url,snippet,published_date  (one row per result)
+# output: title,url,snippet,published_date,image_url  (one row per result)
 ```
 
 The snippet is substantial — often several sentences, not a teaser. **For many lookups the snippet already is the answer.**
@@ -405,7 +405,7 @@ The MCP config block is the same for every agent that speaks MCP (JSON-RPC 2.0 o
 }
 ```
 
-`seek mcp` exposes five tools — `search`, `fetch`, `crawl`, `transcribe` (video URL → transcript), and `agent` (a cited answer to a question; `deep: true` for multi-step research) — with the same provider failover as the CLI. The agent sees tools, not providers. `agent` needs the `agent:` block in provider.yaml.
+`seek mcp` exposes five tools — `search` (web, news, or images via `kind`), `fetch`, `crawl`, `transcribe` (video URL → transcript), and `agent` (a cited answer to a question; `deep: true` for multi-step research) — with the same provider failover as the CLI. The agent sees tools, not providers. `agent` needs the `agent:` block in provider.yaml.
 
 ### HTTP API — Any custom tool or pipeline
 
@@ -417,6 +417,11 @@ seek serve --addr 127.0.0.1:8787 --token "$SEEK_AUTH_TOKEN"
 curl -s localhost:8787/search \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"query": "latest golang release notes"}'
+
+# news or images: add "kind"; image results carry image_url
+curl -s localhost:8787/search \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query": "golang release", "kind": "news", "range": 7}'
 
 curl -s localhost:8787/fetch \
   -H "Authorization: Bearer $TOKEN" \
@@ -457,17 +462,19 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 
 9 providers, one interface. Configure one or all — `auto` uses whatever has a key.
 
-| Provider | search | fetch | crawl | transcribe | Key env var |
-|---|---|---|---|---|---|
-| firecrawl | ✓ | ✓ | ✓ | ✓ (captions) | `FIRECRAWL_API_KEY` |
-| tavily | ✓ | ✓ | ✓ | ✓ (captions) | `TAVILY_API_KEY` |
-| spider.cloud | ✓ | ✓ | ✓ | — | `SPIDER_API_KEY` |
-| exa | ✓ | ✓ | — | — | `EXA_API_KEY` |
-| perplexity | ✓ | — | — | — | `PERPLEXITY_API_KEY` |
-| brave | ✓ | — | — | — | `BRAVE_API_KEY` |
-| webcrawlerapi | — | ✓ | ✓ | — | `WEBCRAWLERAPI_API_KEY` |
-| lightpanda | — | ✓ | — | — | `LIGHTPANDA_API_KEY` |
-| supadata | — | ✓ | ✓ | ✓ (captions + AI) | `SUPADATA_API_KEY` |
+| Provider | search | news | images | fetch | crawl | transcribe | Key env var |
+|---|---|---|---|---|---|---|---|
+| firecrawl | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (captions) | `FIRECRAWL_API_KEY` |
+| tavily | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (captions) | `TAVILY_API_KEY` |
+| spider.cloud | ✓ | — | — | ✓ | ✓ | — | `SPIDER_API_KEY` |
+| exa | ✓ | ✓ | — | ✓ | — | — | `EXA_API_KEY` |
+| perplexity | ✓ | — | — | — | — | — | `PERPLEXITY_API_KEY` |
+| brave | ✓ | ✓ | ✓ | — | — | — | `BRAVE_API_KEY` |
+| webcrawlerapi | — | — | — | ✓ | ✓ | — | `WEBCRAWLERAPI_API_KEY` |
+| lightpanda | — | — | — | ✓ | — | — | `LIGHTPANDA_API_KEY` |
+| supadata | — | — | — | ✓ | ✓ | ✓ (captions + AI) | `SUPADATA_API_KEY` |
+
+`news` / `images` are `seek search --news` / `--images` (see [News & image search](#-news--image-search)).
 
 `firecrawl` and `lightpanda` are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
 
@@ -476,11 +483,25 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 | Operation | Default `auto` order |
 |---|---|
 | search | tavily → exa → firecrawl → spider.cloud → brave → perplexity |
+| search `--news` | tavily → exa → firecrawl → brave |
+| search `--images` | tavily → firecrawl → brave |
 | fetch | tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata |
 | transcribe | tavily → firecrawl → supadata |
 | crawl | no `auto` — uses the configured provider (default `firecrawl`) |
 
 Reorder `providers.priority` in `config.yaml` to change preference; index 0 wins, and capable providers you leave out are appended at the end. `perplexity` is last by default since its search quality is more variable for general queries.
+
+### 📰 News & image search
+
+`seek search --news` searches news articles; `seek search --images` searches images. `auto` skips providers that can't run that kind (perplexity, spider.cloud), and an explicit `-p` provider that can't errors instead of silently running a web search.
+
+```sh
+seek search --news --range 7 "golang release"      # news from the last week
+seek search --images -o csv "golden gate bridge"   # adds an image_url column
+seek search --images -p brave "aurora borealis"
+```
+
+Image results carry `image_url` (the image itself) alongside `url` (the page it appears on; tavily returns no source page, so both are the image) and use the image's description as the title. News results include `published_date` where the provider has one. Also available as `kind: "news" | "images"` on the `search` MCP tool and `POST /search`.
 
 ### 🎬 Transcribe
 
@@ -511,7 +532,7 @@ Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tav
 
 | Command | What it does |
 |---|---|
-| `seek search <query>` | Web search with auto-failover across providers |
+| `seek search <query>` | Web, news (`--news`), or image (`--images`) search with auto-failover across providers |
 | `seek fetch <url>` | Fetch a page as markdown, html, or json |
 | `seek crawl <url>` | Crawl a site and return its pages |
 | `seek transcribe <url>` | Transcript of a video URL (YouTube, TikTok, X, media files, …) — see [Transcribe](#-transcribe) |
@@ -528,7 +549,7 @@ Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tav
 
 | Command | Flags |
 |---|---|
-| `search` | `-p/--provider`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
+| `search` | `-p/--provider`, `--news`, `--images`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
 | `fetch` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o json\|csv`, `--no-cache` |
 | `transcribe` | `-p/--provider`, `-l/--lang <ISO 639-1>` (supadata only) |

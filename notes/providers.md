@@ -17,20 +17,36 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 
 ## Capability matrix
 
-| Provider        | Search | Fetch | Crawl | Transcribe | Time range | Published date | File              |
-|-----------------|:------:|:-----:|:-----:|:----------:|:----------:|:--------------:|-------------------|
-| firecrawl       |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
-| tavily          |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
-| spider.cloud    |   ✓    |   ✓   |   ✓   |     —      |     ✓      |       —        | `spider.go`       |
-| webcrawlerapi   |   —    |   ✓   |   ✓   |     —      |     —      |       —        | `webcrawlerapi.go`|
-| lightpanda      |   —    |   ✓   |   —   |     —      |     —      |       —        | `lightpanda.go`   |
-| brave           |   ✓    |   —   |   —   |     —      |     ✓      |   `page_age`   | `brave.go`        |
-| exa             |   ✓    |   ✓   |   —   |     —      |     ✓      | `publishedDate`| `exa.go`          |
-| perplexity      |   ✓    |   —   |   —   |     —      |     ✓      |     `date`     | `perplexity.go`   |
-| supadata        |   —    |   ✓   |   ✓   |     ✓      |     —      |       —        | `supadata.go`     |
+| Provider        | Search | News | Images | Fetch | Crawl | Transcribe | Time range | Published date | File              |
+|-----------------|:------:|:----:|:------:|:-----:|:-----:|:----------:|:----------:|:--------------:|-------------------|
+| firecrawl       |   ✓    |  ✓   |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |   news `date`  | `firecrawl.go`    |
+| tavily          |   ✓    |  ✓   |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
+| spider.cloud    |   ✓    |  —   |   —    |   ✓   |   ✓   |     —      |     ✓      |       —        | `spider.go`       |
+| webcrawlerapi   |   —    |  —   |   —    |   ✓   |   ✓   |     —      |     —      |       —        | `webcrawlerapi.go`|
+| lightpanda      |   —    |  —   |   —    |   ✓   |   —   |     —      |     —      |       —        | `lightpanda.go`   |
+| brave           |   ✓    |  ✓   |   ✓    |   —   |   —   |     —      |     ✓      |   `page_age`   | `brave.go`        |
+| exa             |   ✓    |  ✓   |   —    |   ✓   |   —   |     —      |     ✓      | `publishedDate`| `exa.go`          |
+| perplexity      |   ✓    |  —   |   —    |   —   |   —   |     —      |     ✓      |     `date`     | `perplexity.go`   |
+| supadata        |   —    |  —   |   —    |   ✓   |   ✓   |     ✓      |     —      |       —        | `supadata.go`     |
 
 Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `TranscribeProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
+News / Images = also implements `KindSearcher` (`SupportsKind("news"|"images")`); `provider.NamesForKind`
+derives the `--news`/`--images` help text from it.
+
+## News & image search (`SearchOptions.Kind`)
+
+`seek search --news|--images` (MCP/HTTP `kind`) sets `SearchOptions.Kind`. `auto` skips chain
+members that don't support the kind (no attempt recorded); an explicit provider that doesn't is a
+hard error (`checkKind` in `ops.go`), not a warning — a web search would return a different kind
+of result. Image results set `SearchResult.ImageURL` (the image) with `URL` = source page.
+
+| Provider  | News                                   | Images                                                        |
+|-----------|----------------------------------------|---------------------------------------------------------------|
+| brave     | `GET /res/v1/news/search` → `results[]` | `GET /res/v1/images/search` → `results[].properties.url`; no `freshness` |
+| firecrawl | `sources: ["news"]` → `data.news[]` (`snippet`, `date`) | `sources: ["images"]` → `data.images[]` (`imageUrl`, `url`) |
+| tavily    | `topic: "news"`                         | `include_images` + `include_image_descriptions` → top-level `images[]` (no source page: `URL` = image; description → title) |
+| exa       | `category: "news"`                      | —                                                             |
 
 ## The `auto` provider (search, fetch & transcribe)
 

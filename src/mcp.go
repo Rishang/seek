@@ -202,7 +202,7 @@ func initializeAuth(req *rpcRequest, token string, auth *mcpAuth) *rpcResponse {
 var mcpTools = []obj{
 	{
 		"name":        "search",
-		"description": "Web search across providers with automatic failover. Returns ranked results (title, url, snippet, published_date) as JSON.",
+		"description": "Web, news, or image search across providers with automatic failover. Returns ranked results (title, url, snippet, published_date, image_url for images) as JSON.",
 		"inputSchema": obj{
 			"type": "object",
 			"properties": obj{
@@ -211,6 +211,7 @@ var mcpTools = []obj{
 				"range":    obj{"type": "integer", "description": "Only results from the last N days"},
 				"start":    obj{"type": "string", "description": "Earliest published date, DD/MM/YYYY"},
 				"end":      obj{"type": "string", "description": "Latest published date, DD/MM/YYYY"},
+				"kind":     obj{"type": "string", "enum": []string{"web", "news", "images"}, "description": "Search kind (default web)"},
 			},
 			"required": []string{"query"},
 		},
@@ -303,7 +304,11 @@ func callTool(ctx context.Context, name string, args json.RawMessage) (string, e
 		if err != nil {
 			return "", err
 		}
-		results, err := opSearch(ctx, a.Provider, a.Query, config.SearchOptions{TimeRange: tr})
+		kind, err := parseKind(a.Kind)
+		if err != nil {
+			return "", err
+		}
+		results, err := opSearch(ctx, a.Provider, a.Query, config.SearchOptions{TimeRange: tr, Kind: kind})
 		if err != nil {
 			return "", err
 		}
