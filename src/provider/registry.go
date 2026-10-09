@@ -18,6 +18,7 @@ const (
 	CapFetch
 	CapCrawl
 	CapTranscribe
+	CapParse
 )
 
 // Has reports whether the mask includes cap.
@@ -83,6 +84,9 @@ var infos = func() []Info {
 		}
 		if _, ok := p.(TranscribeProvider); ok {
 			caps |= CapTranscribe
+		}
+		if _, ok := p.(ParseProvider); ok {
+			caps |= CapParse
 		}
 		out[i] = Info{Name: r.name, Env: r.env, HostDefault: r.hostDefault, Caps: caps}
 	}

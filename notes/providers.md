@@ -6,7 +6,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 ## Contents
 
 - [Capability matrix](#capability-matrix)
-- [The `auto` provider](#the-auto-provider-search-fetch--transcribe)
+- [The `auto` provider](#the-auto-provider-search-fetch-parse--transcribe)
 - [Providers](#providers)
   - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity) · [supadata](#9-supadata)
 - [Auth](#auth)
@@ -17,26 +17,26 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 
 ## Capability matrix
 
-| Provider        | Search | Fetch | Crawl | Transcribe | Time range | Published date | File              |
-|-----------------|:------:|:-----:|:-----:|:----------:|:----------:|:--------------:|-------------------|
-| firecrawl       |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
-| tavily          |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
-| spider.cloud    |   ✓    |   ✓   |   ✓   |     —      |     ✓      |       —        | `spider.go`       |
-| webcrawlerapi   |   —    |   ✓   |   ✓   |     —      |     —      |       —        | `webcrawlerapi.go`|
-| lightpanda      |   —    |   ✓   |   —   |     —      |     —      |       —        | `lightpanda.go`   |
-| brave           |   ✓    |   —   |   —   |     —      |     ✓      |   `page_age`   | `brave.go`        |
-| exa             |   ✓    |   ✓   |   —   |     —      |     ✓      | `publishedDate`| `exa.go`          |
-| perplexity      |   ✓    |   —   |   —   |     —      |     ✓      |     `date`     | `perplexity.go`   |
-| supadata        |   —    |   ✓   |   ✓   |     ✓      |     —      |       —        | `supadata.go`     |
+| Provider        | Search | Fetch | Crawl |   Parse    | Transcribe | Time range | Published date | File              |
+|-----------------|:------:|:-----:|:-----:|:----------:|:----------:|:----------:|:--------------:|-------------------|
+| firecrawl       |   ✓    |   ✓   |   ✓   | PDF+Office |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
+| tavily          |   ✓    |   ✓   |   ✓   |    PDF     |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
+| spider.cloud    |   ✓    |   ✓   |   ✓   |     —      |     —      |     ✓      |       —        | `spider.go`       |
+| webcrawlerapi   |   —    |   ✓   |   ✓   |     —      |     —      |     —      |       —        | `webcrawlerapi.go`|
+| lightpanda      |   —    |   ✓   |   —   |     —      |     —      |     —      |       —        | `lightpanda.go`   |
+| brave           |   ✓    |   —   |   —   |     —      |     —      |     ✓      |   `page_age`   | `brave.go`        |
+| exa             |   ✓    |   ✓   |   —   |     —      |     —      |     ✓      | `publishedDate`| `exa.go`          |
+| perplexity      |   ✓    |   —   |   —   |     —      |     —      |     ✓      |     `date`     | `perplexity.go`   |
+| supadata        |   —    |   ✓   |   ✓   |    PDF     |     ✓      |     —      |       —        | `supadata.go`     |
 
-Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `TranscribeProvider` the type implements
+Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `ParseProvider` / `TranscribeProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
 
-## The `auto` provider (search, fetch & transcribe)
+## The `auto` provider (search, fetch, parse & transcribe)
 
 `auto` is a meta-provider (`provider/auto.go`) that tries configured providers in
 priority order and returns the first non-empty result, failing over on either an
-error or an empty result. It is the default for `search`, `fetch` and `transcribe`. Crawl does
+error or an empty result. It is the default for `search`, `fetch`, `parse` and `transcribe`. Crawl does
 not support it. `supadata` sits after the page scrapers in `DefaultPriority`, so in
 the transcribe chain tavily/firecrawl answer first and a video with no captions still
 "succeeds" with just the page — use `-p supadata` (or move it up in `priority:`) to
@@ -178,6 +178,18 @@ Example config.yaml priority hint:
   `status: completed|failed`.
 
 All endpoints authenticate with an `x-api-key` header (not bearer).
+
+## Parse (documents)
+
+`Parse` is each provider's page scrape pointed at a document URL. Tested 2026-10-09:
+
+- **firecrawl** — `/v2/scrape` auto-detects PDF (fast text, OCR fallback), docx/doc/odt/rtf, xlsx/xls
+  (per docs; not live-tested, no key).
+- **tavily** — `/extract` parses PDFs to plain text; docx/xlsx fail with `Failed to fetch url`.
+- **supadata** — `/web/scrape` parses PDFs to markdown with tables; docx/xlsx come back as raw zip
+  bytes, which `Fetch` rejects via `looksBinary` so `auto` fails over.
+- **lightpanda** — returns empty content for a PDF; not a parse provider.
+- exa / spider.cloud — undocumented for files; not wired.
 
 Firecrawl's and tavily's `Transcribe` are just a markdown scrape/extract: YouTube pages include
 the caption track when one exists (tavily as a timestamped `### Transcript` section), with no ASR

@@ -104,6 +104,27 @@ func opTranscribe(ctx context.Context, providerName, url, lang string) (*config.
 	return result, nil
 }
 
+// opParse parses a document URL. An empty providerName uses the configured
+// default.
+func opParse(ctx context.Context, providerName, url string) (*config.FetchResult, error) {
+	if providerName == "" {
+		providerName = cfg.Parse.Provider
+	}
+	logx.Debug("op: parse provider=%s url=%q", providerName, url)
+	pp, err := factory.Parse(providerName)
+	if err != nil {
+		return nil, err
+	}
+	result, err := pp.Parse(ctx, url)
+	logAutoAttempts(pp)
+	if err != nil {
+		logx.Debug("op: parse failed: %v", err)
+		return nil, err
+	}
+	logx.Debug("op: parse ok, %d bytes", len(result.Content))
+	return result, nil
+}
+
 // fmtRange renders a time range compactly for debug logs.
 func fmtRange(tr config.TimeRange) string {
 	if tr.IsZero() {
