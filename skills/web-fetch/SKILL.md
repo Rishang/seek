@@ -41,4 +41,5 @@ seek fetch "<url>"             # one page → full markdown on stdout
 ## Flags worth knowing but not often used(rarely required)
 - `seek search -o csv` — CSV instead of JSON (compact; columns `title,url,snippet,published_date`). Prefer it.
 - `-p firecrawl|tavily|spider.cloud|brave` (search) / `-p firecrawl|tavily|spider.cloud|webcrawlerapi|lightpanda` (fetch) — pin a provider.
+- `seek map -o csv "<site>"` — a site's URL list without scraping (cheaper than crawl). `| rg <keyword>` it, then fetch the one match.
 - `--no-cache` — bypass the result cache for one call.
