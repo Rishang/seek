@@ -9,7 +9,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// FirecrawlProvider supports search, fetch, and crawl via firecrawl.
+// FirecrawlProvider supports search, fetch, crawl, and map via firecrawl.
 // Docs: https://docs.firecrawl.dev
 type FirecrawlProvider struct {
 	*httpClient
@@ -233,8 +233,22 @@ func (p *FirecrawlProvider) Crawl(ctx context.Context, url string) (*config.Craw
 	}
 }
 
+// ---- Map ----
+
+func (p *FirecrawlProvider) Map(ctx context.Context, url string, limit int) ([]config.MapLink, error) {
+	body := map[string]any{"url": url, "limit": limit}
+	var resp struct {
+		Links []config.MapLink `json:"links"`
+	}
+	if err := p.post(ctx, "map", p.baseURL()+"/v2/map", &body, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Links, nil
+}
+
 // Compile-time interface checks.
 var (
+	_ MapProvider        = (*FirecrawlProvider)(nil)
 	_ SearchProvider     = (*FirecrawlProvider)(nil)
 	_ FetchProvider      = (*FirecrawlProvider)(nil)
 	_ CrawlProvider      = (*FirecrawlProvider)(nil)

@@ -83,3 +83,26 @@ func TestSupadataCrawlPollsAndPaginates(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+// Supadata's map takes no limit, so Map must cap the result client-side.
+func TestSupadataMapAppliesLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/web/map" || r.URL.Query().Get("url") != "https://x.dev" {
+			t.Errorf("unexpected request %s", r.URL)
+		}
+		w.Write([]byte(`{"urls":["https://x.dev/a","https://x.dev/b","https://x.dev/c"]}`))
+	}))
+	defer srv.Close()
+
+	oldBase := supadataBase
+	supadataBase = srv.URL
+	defer func() { supadataBase = oldBase }()
+
+	links, err := NewSupadataProvider(config.ProviderConfig{APIKey: "k"}).Map(context.Background(), "https://x.dev", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 2 || links[1].URL != "https://x.dev/b" {
+		t.Fatalf("links = %+v", links)
+	}
+}

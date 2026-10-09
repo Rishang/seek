@@ -183,6 +183,7 @@ type Config struct {
 	Crawl  Operation `yaml:"crawl"`
 
 	Transcribe Operation `yaml:"transcribe"`
+	Map        Operation `yaml:"map"`
 
 	// Priority is the global "auto" try-order (index 0 = highest priority),
 	// filtered to capable+configured providers at runtime. It lives under the
@@ -272,6 +273,14 @@ type CrawlResult struct {
 	Content string   `json:"content"`
 }
 
+// MapLink is one URL discovered on a site by a map request. Title and
+// Description are filled only by providers that return them.
+type MapLink struct {
+	URL         string `json:"url"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 // Default returns the built-in configuration used when no file is present or to
 // fill fields a file omits.
 func Default() Config {
@@ -289,6 +298,7 @@ func Default() Config {
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
 
 		Transcribe: Operation{Provider: "auto"},
+		Map:        Operation{Provider: "auto"},
 
 		Priority: append([]string(nil), DefaultPriority...),
 	}

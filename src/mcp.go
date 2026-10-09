@@ -34,8 +34,9 @@ func mcpCmd() *cli.Command {
 		Usage:     "Run seek as an MCP server (stdio)",
 		UsageText: "seek mcp [--token TOKEN]",
 		Description: "Speak the Model Context Protocol over stdio so MCP-capable agents can\n" +
-			"call seek's search, fetch, crawl, and agent tools. stdout carries the JSON-RPC\n" +
-			"stream; logs go to stderr. Requests are handled concurrently.\n\n" +
+			"call seek's search, fetch, crawl, map, transcribe, and agent tools. stdout\n" +
+			"carries the JSON-RPC stream; logs go to stderr. Requests are handled\n" +
+			"concurrently.\n\n" +
 			"Auth: set --token (or SEEK_AUTH_TOKEN) to require a matching token in the\n" +
 			"initialize handshake. Without a token the server is unauthenticated.",
 		Flags: []cli.Flag{
@@ -241,6 +242,19 @@ var mcpTools = []obj{
 		},
 	},
 	{
+		"name":        "map",
+		"description": "List the URLs on a website without scraping them. Use it to find the right pages before fetching. Returns JSON links (url, plus title/description when the provider has them).",
+		"inputSchema": obj{
+			"type": "object",
+			"properties": obj{
+				"url":      obj{"type": "string", "description": "Site URL to map"},
+				"provider": obj{"type": "string", "description": "Override provider; defaults to the configured one (auto)"},
+				"limit":    obj{"type": "integer", "description": "Max URLs to return (default 100)"},
+			},
+			"required": []string{"url"},
+		},
+	},
+	{
 		"name":        "transcribe",
 		"description": "Transcript of a video URL (YouTube, TikTok, Instagram, X, or a direct media file). Returns the transcript text, or the video page as markdown with a transcript section, depending on the provider.",
 		"inputSchema": obj{
@@ -336,6 +350,20 @@ func callTool(ctx context.Context, name string, args json.RawMessage) (string, e
 			return "", err
 		}
 		return jsonString(result), nil
+
+	case "map":
+		var a mapRequest
+		if err := json.Unmarshal(args, &a); err != nil {
+			return "", fmt.Errorf("invalid arguments: %w", err)
+		}
+		if a.URL == "" {
+			return "", fmt.Errorf("url is required")
+		}
+		links, err := opMap(ctx, a.Provider, a.URL, a.Limit)
+		if err != nil {
+			return "", err
+		}
+		return jsonString(links), nil
 
 	case "transcribe":
 		var a transcribeRequest

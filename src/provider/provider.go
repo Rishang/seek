@@ -35,6 +35,12 @@ type TranscribeProvider interface {
 	Transcribe(ctx context.Context, url, lang string) (*config.FetchResult, error)
 }
 
+// MapProvider lists the URLs on a site without scraping them. limit caps the
+// number of links returned.
+type MapProvider interface {
+	Map(ctx context.Context, url string, limit int) ([]config.MapLink, error)
+}
+
 // Provider is any registered provider. The concrete capabilities (search,
 // fetch, crawl) are probed by type-asserting to the interfaces above, so a
 // provider need only implement whichever it supports.
@@ -51,4 +57,17 @@ type Attempt struct {
 // which provider served a request and why earlier ones failed.
 type AutoReporter interface {
 	Attempts() []Attempt
+}
+
+// urlLinks wraps bare URLs as MapLinks, keeping at most limit (limit <= 0 keeps
+// all) for providers that can't cap the result server-side.
+func urlLinks(urls []string, limit int) []config.MapLink {
+	if limit > 0 && len(urls) > limit {
+		urls = urls[:limit]
+	}
+	out := make([]config.MapLink, len(urls))
+	for i, u := range urls {
+		out[i] = config.MapLink{URL: u}
+	}
+	return out
 }

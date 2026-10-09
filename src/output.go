@@ -44,6 +44,11 @@ func renderTo(w io.Writer, format string, v any) error {
 		for _, item := range r {
 			cw.Write([]string{item.Title, item.URL, item.Snippet, item.PublishedDate})
 		}
+	case []config.MapLink:
+		cw.Write([]string{"url", "title", "description"})
+		for _, l := range r {
+			cw.Write([]string{l.URL, l.Title, l.Description})
+		}
 	case *config.CrawlResult:
 		cw.Write([]string{"url", "pages", "content"})
 		cw.Write([]string{r.URL, strings.Join(r.Pages, "\n"), r.Content})

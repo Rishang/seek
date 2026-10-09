@@ -6,7 +6,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 ## Contents
 
 - [Capability matrix](#capability-matrix)
-- [The `auto` provider](#the-auto-provider-search-fetch--transcribe)
+- [The `auto` provider](#the-auto-provider-search-fetch-map--transcribe)
 - [Providers](#providers)
   - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity) · [supadata](#9-supadata)
 - [Auth](#auth)
@@ -17,26 +17,26 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 
 ## Capability matrix
 
-| Provider        | Search | Fetch | Crawl | Transcribe | Time range | Published date | File              |
-|-----------------|:------:|:-----:|:-----:|:----------:|:----------:|:--------------:|-------------------|
-| firecrawl       |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
-| tavily          |   ✓    |   ✓   |   ✓   |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
-| spider.cloud    |   ✓    |   ✓   |   ✓   |     —      |     ✓      |       —        | `spider.go`       |
-| webcrawlerapi   |   —    |   ✓   |   ✓   |     —      |     —      |       —        | `webcrawlerapi.go`|
-| lightpanda      |   —    |   ✓   |   —   |     —      |     —      |       —        | `lightpanda.go`   |
-| brave           |   ✓    |   —   |   —   |     —      |     ✓      |   `page_age`   | `brave.go`        |
-| exa             |   ✓    |   ✓   |   —   |     —      |     ✓      | `publishedDate`| `exa.go`          |
-| perplexity      |   ✓    |   —   |   —   |     —      |     ✓      |     `date`     | `perplexity.go`   |
-| supadata        |   —    |   ✓   |   ✓   |     ✓      |     —      |       —        | `supadata.go`     |
+| Provider        | Search | Fetch | Crawl | Map | Transcribe | Time range | Published date | File              |
+|-----------------|:------:|:-----:|:-----:|:---:|:----------:|:----------:|:--------------:|-------------------|
+| firecrawl       |   ✓    |   ✓   |   ✓   |  ✓  |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
+| tavily          |   ✓    |   ✓   |   ✓   |  ✓  |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
+| spider.cloud    |   ✓    |   ✓   |   ✓   |  —  |     —      |     ✓      |       —        | `spider.go`       |
+| webcrawlerapi   |   —    |   ✓   |   ✓   |  —  |     —      |     —      |       —        | `webcrawlerapi.go`|
+| lightpanda      |   —    |   ✓   |   —   |  —  |     —      |     —      |       —        | `lightpanda.go`   |
+| brave           |   ✓    |   —   |   —   |  —  |     —      |     ✓      |   `page_age`   | `brave.go`        |
+| exa             |   ✓    |   ✓   |   —   |  —  |     —      |     ✓      | `publishedDate`| `exa.go`          |
+| perplexity      |   ✓    |   —   |   —   |  —  |     —      |     ✓      |     `date`     | `perplexity.go`   |
+| supadata        |   —    |   ✓   |   ✓   |  ✓  |     ✓      |     —      |       —        | `supadata.go`     |
 
-Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `TranscribeProvider` the type implements
+Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `MapProvider` / `TranscribeProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
 
-## The `auto` provider (search, fetch & transcribe)
+## The `auto` provider (search, fetch, map & transcribe)
 
 `auto` is a meta-provider (`provider/auto.go`) that tries configured providers in
 priority order and returns the first non-empty result, failing over on either an
-error or an empty result. It is the default for `search`, `fetch` and `transcribe`. Crawl does
+error or an empty result. It is the default for `search`, `fetch`, `map` and `transcribe`. Crawl does
 not support it. `supadata` sits after the page scrapers in `DefaultPriority`, so in
 the transcribe chain tavily/firecrawl answer first and a video with no captions still
 "succeeds" with just the page — use `-p supadata` (or move it up in `priority:`) to
@@ -74,10 +74,11 @@ Example config.yaml priority hint:
 
 **Docs:** https://docs.firecrawl.dev
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Search, Fetch, Crawl
+**Capabilities:** Search, Fetch, Crawl, Map, Transcribe (page)
 
 **Notes:**
 - Self-hostable via `host` override.
+- Map: `POST /v2/map {url, limit}` → `links[] {url, title?, description?}` (decoded straight into `MapLink`).
 - `tbs` Google-style time filter.
 
 ---
@@ -86,9 +87,10 @@ Example config.yaml priority hint:
 
 **Docs:** https://docs.tavily.com
 **Auth:** `Authorization: Bearer <key>`
-**Capabilities:** Search, Fetch (extract), Crawl
+**Capabilities:** Search, Fetch (extract), Crawl, Map, Transcribe (page)
 
 **Notes:**
+- Map: `POST /map {url, limit}` → `results[]` (bare URLs; `limit` caps links processed, re-applied client-side).
 - `published_date` only for `topic=news`; empty for general search.
 - `start_date` / `end_date` time filter.
 
@@ -165,13 +167,14 @@ Example config.yaml priority hint:
 
 **Docs:** https://docs.supadata.ai (transcript, web/scrape, web/crawl)
 
-**Capabilities:** Fetch, Crawl, Transcribe
+**Capabilities:** Fetch, Crawl, Map, Transcribe
 
 - **Fetch:** `GET /v1/web/scrape?url=` → `{url, content (markdown), name, urls[]}`. Markdown
   only; `--format` is ignored.
 - **Crawl:** `POST /v1/web/crawl {url, limit: 100}` → `{jobId}`; poll
   `GET /v1/web/crawl/{jobId}` until `status: completed` (`failed|cancelled` → error), then
   follow the absolute `next` URL (`?skip=N`) until absent. Pages are recorded by URL.
+- **Map:** `GET /v1/web/map?url=` → `{urls[]}`. No limit param, so `Map` truncates client-side.
 - **Transcribe:** `GET /v1/transcript?url=&text=true[&lang=]`. Any video page URL
   (YouTube, TikTok, Instagram, X, Facebook) or direct media file; native captions first, AI
   fallback. Long videos return `202 {jobId}` → poll `GET /v1/transcript/{jobId}` until

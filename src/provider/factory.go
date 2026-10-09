@@ -20,7 +20,7 @@ type opCache struct {
 type Factory struct {
 	providers map[string]Provider
 	caches    map[string]opCache  // keyed by "search" | "fetch" | "crawl"
-	chains    map[string][]string // auto candidate order, keyed by "search" | "fetch" | "transcribe"
+	chains    map[string][]string // auto candidate order, keyed by "search" | "fetch" | "transcribe" | "map"
 }
 
 // NewFactory builds providers from the given list of ProviderConfig entries.
@@ -28,7 +28,7 @@ func NewFactory(providers []config.ProviderConfig) *Factory {
 	f := &Factory{
 		providers: make(map[string]Provider, len(providers)),
 		caches:    make(map[string]opCache, 3),
-		chains:    make(map[string][]string, 3),
+		chains:    make(map[string][]string, 4),
 	}
 	for _, pc := range providers {
 		if pc.APIKey == "" && pc.Host == "" {
@@ -150,6 +150,24 @@ func (f *Factory) Transcribe(name string) (TranscribeProvider, error) {
 		return nil, fmt.Errorf("provider %q: no configured provider supports transcribe", "auto")
 	}
 	return newAutoTranscribe(chain), nil
+}
+
+// Map returns a provider that supports map, or an error. The name "auto"
+// builds a failover chain. Map results are not cached.
+func (f *Factory) Map(name string) (MapProvider, error) {
+	if name != "auto" {
+		return capability[MapProvider](f, name, "map")
+	}
+	var chain []autoMapEntry
+	for _, n := range f.chains["map"] {
+		if mp, err := capability[MapProvider](f, n, "map"); err == nil {
+			chain = append(chain, autoMapEntry{name: n, mp: mp})
+		}
+	}
+	if len(chain) == 0 {
+		return nil, fmt.Errorf("provider %q: no configured provider supports map", "auto")
+	}
+	return &autoMap{chain: chain}, nil
 }
 
 // capability looks up a provider by name and asserts it supports capability T,
