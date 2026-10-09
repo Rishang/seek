@@ -81,3 +81,9 @@ Module `github.com/rishang/seek`, rooted in `src/`. Go 1.25, `urfave/cli/v3`, `i
 
 Use the Taskfile: `task build`, `task test`, `task vet`, `task fmt`, `task run -- search "query"`.
 Before finishing: `task fmt && task vet && task test`.
+
+**Keep `README.md` in sync.** It is the user-facing reference. Any change that alters what a user
+sees or configures — a command, flag, provider, capability, `auto` order/priority, config key,
+env var, MCP tool, or HTTP endpoint — updates the matching README section (provider table,
+default `auto` order table, Commands / Key Flags, Configuration, MCP / HTTP examples) in the same
+change, alongside `notes/`.

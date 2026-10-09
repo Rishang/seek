@@ -16,7 +16,7 @@ func TestRegistryCapabilitiesMatchInterfaces(t *testing.T) {
 		"brave":         CapSearch,
 		"exa":           CapSearch | CapFetch,
 		"perplexity":    CapSearch,
-		"supadata":      CapTranscribe,
+		"supadata":      CapFetch | CapCrawl | CapTranscribe,
 	}
 
 	got := Providers()

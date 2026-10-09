@@ -467,11 +467,20 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 | brave | ✓ | — | — | — | `BRAVE_API_KEY` |
 | webcrawlerapi | — | ✓ | ✓ | — | `WEBCRAWLERAPI_API_KEY` |
 | lightpanda | — | ✓ | — | — | `LIGHTPANDA_API_KEY` |
-| supadata | — | — | — | ✓ (captions + AI) | `SUPADATA_API_KEY` |
+| supadata | — | ✓ | ✓ | ✓ (captions + AI) | `SUPADATA_API_KEY` |
 
 `firecrawl` and `lightpanda` are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
 
-**Auto priority order:** `supadata → tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → brave → perplexity`. Reorder in `config.yaml` to change preference; index 0 wins. `perplexity` is last by default since its search quality is more variable for general queries. `supadata` leads because it only transcribes (it never competes for search/fetch) and is the one transcriber that falls back to AI speech-to-text.
+**Auto priority order:** one global list — `tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata → brave → perplexity`. For each operation, `auto` keeps only the providers that support it (and have a key), so the effective defaults are:
+
+| Operation | Default `auto` order |
+|---|---|
+| search | tavily → exa → firecrawl → spider.cloud → brave → perplexity |
+| fetch | tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata |
+| transcribe | tavily → firecrawl → supadata |
+| crawl | no `auto` — uses the configured provider (default `firecrawl`) |
+
+Reorder `providers.priority` in `config.yaml` to change preference; index 0 wins, and capable providers you leave out are appended at the end. `perplexity` is last by default since its search quality is more variable for general queries.
 
 ### 🎬 Transcribe
 
@@ -494,7 +503,7 @@ seek config init --transcribe supadata --yes                       # pin a defau
 
 Also available as the `transcribe` MCP tool (`{url, provider?, lang?}`) and `POST /transcribe` on `seek serve`.
 
-Quote the URL — `?` in YouTube links is a glob in zsh. If your `config.yaml` sets its own `priority:` list, add `supadata` to it (first) so videos without captions reach the AI fallback; a page scraper otherwise "succeeds" with just the page.
+Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tavily/firecrawl answer before supadata, so a video without captions returns just the page — use `-p supadata` (or move it up in `priority:`) for its AI transcription fallback.
 
 ---
 
@@ -554,13 +563,13 @@ config:
 
 providers:
   priority:             # index 0 = highest priority
-    - supadata
     - tavily
     - exa
     - firecrawl
     - spider.cloud
     - webcrawlerapi
     - lightpanda
+    - supadata
     - brave
 ```
 

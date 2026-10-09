@@ -192,12 +192,8 @@ type Config struct {
 
 // DefaultPriority is the built-in "auto" try-order, used when config.yaml does
 // not set providers.priority. Index 0 is highest priority.
-//
-// supadata leads because it only transcribes, and it is the one transcriber
-// with an ASR fallback; page-scrape transcribers (tavily, firecrawl) return the
-// page even when a video has no captions, which would end the chain early.
 var DefaultPriority = []string{
-	"supadata", "tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave", "perplexity",
+	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "supadata", "brave", "perplexity",
 }
 
 // Operation configures a single capability (search, fetch, or crawl).

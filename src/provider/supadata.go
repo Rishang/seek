@@ -4,18 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rishang/seek/config"
 )
 
-// SupadataProvider supports transcribe via the Supadata transcript API.
-// Docs: https://docs.supadata.ai/api-reference/endpoint/transcript/transcript
+// SupadataProvider supports fetch, crawl, and transcribe via the Supadata API.
+// Docs: https://docs.supadata.ai
 //
-// Accepts any video page URL (YouTube, TikTok, Instagram, X, Facebook) or a
-// direct media file; native captions are used first, with AI transcription as
-// the fallback. Auth is an x-api-key header, so requests bypass the shared
-// bearer helpers.
+// Transcribe accepts any video page URL (YouTube, TikTok, Instagram, X,
+// Facebook) or a direct media file; native captions are used first, with AI
+// transcription as the fallback. Auth is an x-api-key header, so requests
+// bypass the shared bearer helpers.
 type SupadataProvider struct {
 	*httpClient
 }
@@ -25,21 +26,83 @@ func NewSupadataProvider(cfg config.ProviderConfig) *SupadataProvider {
 }
 
 // supadataBase is a var so tests can point it at a local server.
-var supadataBase = "https://api.supadata.ai/v1/transcript"
+var supadataBase = "https://api.supadata.ai/v1"
 
 // supadataPollInterval is how often an async job is polled (a var so tests can shorten it).
 var supadataPollInterval = 2 * time.Second
 
 // ---- response types ----
 
-// supadataResponse covers both the immediate result (200) and the job flow:
+// supadataTranscript covers both the immediate result (200) and the job flow:
 // a 202 carries JobID, and polling returns Status until "completed".
-type supadataResponse struct {
+type supadataTranscript struct {
 	Content string `json:"content"` // plain text, since we request text=true
 	Lang    string `json:"lang"`
 	JobID   string `json:"jobId"`
 	Status  string `json:"status"` // queued | active | completed | failed
 	Error   any    `json:"error"`
+}
+
+type supadataPage struct {
+	URL     string `json:"url"`
+	Content string `json:"content"` // markdown
+	Name    string `json:"name"`
+}
+
+type supadataCrawlStatus struct {
+	Status string         `json:"status"` // scraping | completed | failed | cancelled
+	Pages  []supadataPage `json:"pages"`
+	Next   string         `json:"next"` // absolute URL of the next results page, when more remain
+}
+
+// ---- Fetch ----
+
+// Fetch scrapes a page. Supadata only returns markdown, so the requested
+// output format is ignored.
+func (p *SupadataProvider) Fetch(ctx context.Context, url string, _ config.FetchOptions) (*config.FetchResult, error) {
+	var page supadataPage
+	if _, err := p.do(ctx, "fetch", http.MethodGet, supadataBase+"/web/scrape", map[string]string{"url": url}, nil, &page); err != nil {
+		return nil, err
+	}
+	return &config.FetchResult{URL: url, Content: page.Content, Format: string(config.FormatMarkdown)}, nil
+}
+
+// ---- Crawl ----
+
+func (p *SupadataProvider) Crawl(ctx context.Context, url string) (*config.CrawlResult, error) {
+	var start struct {
+		JobID string `json:"jobId"`
+	}
+	body := map[string]any{"url": url, "limit": 100}
+	if _, err := p.do(ctx, "crawl start", http.MethodPost, supadataBase+"/web/crawl", nil, body, &start); err != nil {
+		return nil, err
+	}
+
+	next := supadataBase + "/web/crawl/" + start.JobID
+	result := &config.CrawlResult{URL: url}
+	var content strings.Builder
+	for next != "" {
+		var st supadataCrawlStatus
+		if _, err := p.do(ctx, "crawl poll", http.MethodGet, next, nil, nil, &st); err != nil {
+			return nil, err
+		}
+		switch st.Status {
+		case "failed", "cancelled":
+			return nil, fmt.Errorf("supadata crawl job %s %s", start.JobID, st.Status)
+		case "completed":
+			for _, pg := range st.Pages {
+				result.Pages = append(result.Pages, pg.URL)
+				content.WriteString(pg.Content + "\n\n")
+			}
+			next = st.Next // follow pagination; "" ends the loop
+			continue
+		}
+		if err := sleepCtx(ctx, supadataPollInterval); err != nil {
+			return nil, fmt.Errorf("supadata crawl: %w", err)
+		}
+	}
+	result.Content = content.String()
+	return result, nil
 }
 
 // ---- Transcribe ----
@@ -49,7 +112,8 @@ func (p *SupadataProvider) Transcribe(ctx context.Context, url, lang string) (*c
 	if lang != "" {
 		params["lang"] = lang
 	}
-	resp, code, err := p.call(ctx, supadataBase, params)
+	var resp supadataTranscript
+	code, err := p.do(ctx, "transcribe", http.MethodGet, supadataBase+"/transcript", params, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -59,13 +123,12 @@ func (p *SupadataProvider) Transcribe(ctx context.Context, url, lang string) (*c
 		if resp.Status == "failed" {
 			return nil, fmt.Errorf("supadata transcribe job failed: %v", resp.Error)
 		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("supadata transcribe: %w", ctx.Err())
-		case <-time.After(supadataPollInterval):
+		if err := sleepCtx(ctx, supadataPollInterval); err != nil {
+			return nil, fmt.Errorf("supadata transcribe: %w", err)
 		}
 		jobID := resp.JobID
-		if resp, code, err = p.call(ctx, supadataBase+"/"+jobID, nil); err != nil {
+		resp = supadataTranscript{}
+		if code, err = p.do(ctx, "transcribe", http.MethodGet, supadataBase+"/transcript/"+jobID, nil, nil, &resp); err != nil {
 			return nil, err
 		}
 		resp.JobID = jobID
@@ -74,24 +137,40 @@ func (p *SupadataProvider) Transcribe(ctx context.Context, url, lang string) (*c
 	return &config.FetchResult{URL: url, Content: resp.Content, Format: "text"}, nil
 }
 
-// call issues an authenticated GET and accepts 200 or 202.
-func (p *SupadataProvider) call(ctx context.Context, endpoint string, params map[string]string) (supadataResponse, int, error) {
-	var out supadataResponse
-	r, err := p.client.R().
+// do issues an x-api-key authenticated request and accepts 200 or 202,
+// returning the status so callers can detect async jobs.
+func (p *SupadataProvider) do(ctx context.Context, op, method, endpoint string, params map[string]string, body, out any) (int, error) {
+	r := p.client.R().
 		SetContext(ctx).
 		SetHeader("x-api-key", p.apiKey).
 		SetQueryParams(params).
-		SetSuccessResult(&out).
-		Get(endpoint)
+		SetSuccessResult(out)
+	if body != nil {
+		r.SetBodyJsonMarshal(body)
+	}
+	resp, err := r.Send(method, endpoint)
 	if err != nil {
-		return out, 0, fmt.Errorf("supadata transcribe request failed: %w", err)
+		return 0, fmt.Errorf("supadata %s request failed: %w", op, err)
 	}
-	if r.StatusCode != http.StatusAccepted {
-		if err := p.expectOK("transcribe", r); err != nil {
-			return out, r.StatusCode, err
-		}
+	if resp.StatusCode == http.StatusAccepted {
+		return resp.StatusCode, nil
 	}
-	return out, r.StatusCode, nil
+	return resp.StatusCode, p.expectOK(op, resp)
 }
 
-var _ TranscribeProvider = (*SupadataProvider)(nil)
+// sleepCtx waits d or until ctx is done.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+// Compile-time interface checks.
+var (
+	_ FetchProvider      = (*SupadataProvider)(nil)
+	_ CrawlProvider      = (*SupadataProvider)(nil)
+	_ TranscribeProvider = (*SupadataProvider)(nil)
+)

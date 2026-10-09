@@ -27,7 +27,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 | brave           |   ✓    |   —   |   —   |     —      |     ✓      |   `page_age`   | `brave.go`        |
 | exa             |   ✓    |   ✓   |   —   |     —      |     ✓      | `publishedDate`| `exa.go`          |
 | perplexity      |   ✓    |   —   |   —   |     —      |     ✓      |     `date`     | `perplexity.go`   |
-| supadata        |   —    |   —   |   —   |     ✓      |     —      |       —        | `supadata.go`     |
+| supadata        |   —    |   ✓   |   ✓   |     ✓      |     —      |       —        | `supadata.go`     |
 
 Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `TranscribeProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
@@ -37,9 +37,10 @@ Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `Tr
 `auto` is a meta-provider (`provider/auto.go`) that tries configured providers in
 priority order and returns the first non-empty result, failing over on either an
 error or an empty result. It is the default for `search`, `fetch` and `transcribe`. Crawl does
-not support it. `supadata` leads `DefaultPriority` so the transcribe chain tries
-the ASR-backed transcriber before page scrapes (which "succeed" with just the page
-when a video has no captions).
+not support it. `supadata` sits after the page scrapers in `DefaultPriority`, so in
+the transcribe chain tavily/firecrawl answer first and a video with no captions still
+"succeeds" with just the page — use `-p supadata` (or move it up in `priority:`) to
+get its ASR fallback.
 
 - **Membership** comes from provider.yaml (plus env overrides): every provider you
   have a key/host for, that supports the operation, is in the chain. There is no
@@ -162,14 +163,21 @@ Example config.yaml priority hint:
 
 ### 9. supadata
 
-**Docs:** https://docs.supadata.ai/api-reference/endpoint/transcript/transcript
+**Docs:** https://docs.supadata.ai (transcript, web/scrape, web/crawl)
 
-**Capabilities:** Transcribe (first in the transcribe `auto` chain)
+**Capabilities:** Fetch, Crawl, Transcribe
 
-`GET /v1/transcript?url=&text=true[&lang=]`, auth `x-api-key` header. Any video page URL
-(YouTube, TikTok, Instagram, X, Facebook) or direct media file; native captions first, AI
-fallback. Long videos return `202 {jobId}` → poll `GET /v1/transcript/{jobId}` until
-`status: completed|failed`.
+- **Fetch:** `GET /v1/web/scrape?url=` → `{url, content (markdown), name, urls[]}`. Markdown
+  only; `--format` is ignored.
+- **Crawl:** `POST /v1/web/crawl {url, limit: 100}` → `{jobId}`; poll
+  `GET /v1/web/crawl/{jobId}` until `status: completed` (`failed|cancelled` → error), then
+  follow the absolute `next` URL (`?skip=N`) until absent. Pages are recorded by URL.
+- **Transcribe:** `GET /v1/transcript?url=&text=true[&lang=]`. Any video page URL
+  (YouTube, TikTok, Instagram, X, Facebook) or direct media file; native captions first, AI
+  fallback. Long videos return `202 {jobId}` → poll `GET /v1/transcript/{jobId}` until
+  `status: completed|failed`.
+
+All endpoints authenticate with an `x-api-key` header (not bearer).
 
 Firecrawl's and tavily's `Transcribe` are just a markdown scrape/extract: YouTube pages include
 the caption track when one exists (tavily as a timestamped `### Transcript` section), with no ASR
