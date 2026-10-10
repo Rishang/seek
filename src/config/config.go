@@ -60,7 +60,7 @@ type AgentConfig struct {
 	ExtractModel    string `yaml:"extract_model,omitempty"`
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty"` // e.g. low | medium | high
 	Sources         int    `yaml:"sources,omitempty"`
-	MaxSteps        int    `yaml:"max_steps,omitempty"` // deep research turn cap
+	MaxSteps        int    `yaml:"max_steps,omitempty"` // deep research read rounds
 }
 
 // CacheCreds holds credentials for cache backends that need them. It lives in

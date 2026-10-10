@@ -1,7 +1,7 @@
 // Package agent answers questions from the web. Run is the fast, shallow
-// mode (one search, answer from snippets); Research is deep research, where
-// the model drives search and fetch as tools and fetched pages are distilled
-// into deduped facts by a small extract model.
+// mode (one search, answer from snippets); Research is deep research, a
+// code-driven pipeline in which a small extract model plans a checklist and
+// distills pages into verified, deduped facts that the model answers from once.
 package agent
 
 import (
@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -25,11 +26,13 @@ import (
 // model when Options.Sources is 0.
 const DefaultSources = 8
 
-// DefaultMaxSteps caps deep-research model turns when Options.MaxSteps is 0.
-const DefaultMaxSteps = 12
+// DefaultMaxRounds caps deep-research rounds when Options.MaxRounds is 0: the
+// first read plus one gap round for checklist parts no fact covers yet.
+const DefaultMaxRounds = 2
 
-// maxPageChars caps each page sent to the extract model.
-// ponytail: blunt char cap; chunk pages instead if long sources lose facts.
+// maxPageChars caps each page sent to the extract model; focusPage keeps the
+// sections most relevant to the question within it.
+// ponytail: one excerpt per page; chunk pages instead if long sources lose facts.
 const maxPageChars = 30000
 
 // Deps are the operations the agent needs. Function fields keep the package
@@ -53,7 +56,7 @@ type Options struct {
 	ExtractModel    string // per-source extraction model; Model when empty
 	ReasoningEffort string // sent with Model's requests only; "" omits it
 	Sources         int    // Run: ranked results shown to the model; DefaultSources when 0
-	MaxSteps        int    // Research: model turns before a forced answer; DefaultMaxSteps when 0
+	MaxRounds       int    // Research: read rounds before answering; DefaultMaxRounds when 0
 }
 
 func (o *Options) defaults() {
@@ -63,8 +66,8 @@ func (o *Options) defaults() {
 	if o.Sources <= 0 {
 		o.Sources = DefaultSources
 	}
-	if o.MaxSteps <= 0 {
-		o.MaxSteps = DefaultMaxSteps
+	if o.MaxRounds <= 0 {
+		o.MaxRounds = DefaultMaxRounds
 	}
 }
 
@@ -97,11 +100,13 @@ type Result struct {
 	Skipped []Skip   `json:"skipped,omitempty"`
 }
 
-const extractPrompt = `You extract facts from one web page to help answer a question.
-Return JSON: {"facts":[{"claim":"...","relevance":0-3}]}.
-Each claim is one short, self-contained, factual statement taken from the page.
-Skip navigation, ads, marketing language, SEO filler and boilerplate.
-relevance: 3 = directly answers the question, 2 = useful context, 1 = tangential, 0 = unrelated.
+const extractPrompt = `You extract facts from one web page for a research question split into numbered parts.
+Return JSON: {"facts":[{"claim":"...","quote":"...","parts":[1],"relevance":0-3}]}.
+- claim: one short, self-contained statement the page makes. Keep names, versions, numbers and dates exactly as written. A short command or code line the page shows may be a claim, copied exactly.
+- quote: the words on the page that state the claim, copied verbatim (at most 30 words; join distant pieces with "...").
+- parts: the numbers of the parts the claim helps answer.
+- relevance: 3 = directly answers a part, 2 = useful context, 1 = tangential, 0 = unrelated.
+State only what the page says, never background knowledge. Skip navigation, ads, marketing language, SEO filler and boilerplate.
 Return {"facts":[]} if the page has nothing relevant.`
 
 const planPrompt = `Decide whether a web research question combines distinct parts (several tools, libraries, APIs or subtopics) that one search would cover only partly.
@@ -506,31 +511,38 @@ func pickSources(hits []config.SearchResult, n int) []Source {
 
 type extracted struct {
 	Claim     string `json:"claim"`
+	Quote     string `json:"quote"`
+	Parts     []int  `json:"parts"`
 	Relevance int    `json:"relevance"`
 }
 
-// extract fetches url and asks the extract model for the facts relevant to
-// question. The extract model never gets a reasoning effort: small models
-// often reject the parameter, and extraction doesn't need it.
-func extract(ctx context.Context, d Deps, model, question, url string) ([]extracted, error) {
-	page, err := d.Fetch(ctx, url)
+// extract fetches url, trims it to the sections most relevant to the question,
+// and asks the extract model for facts tagged with the checklist parts they
+// answer. Facts below relevance 2 or not grounded in the page are dropped. The
+// extract model never gets a reasoning effort: small models often reject the
+// parameter, and extraction doesn't need it.
+func extract(ctx context.Context, d Deps, model, question string, parts []*part, weights map[string]float64, url string) ([]extracted, error) {
+	fctx, cancel := context.WithTimeout(ctx, deepFetchTTL)
+	page, err := d.Fetch(fctx, url)
+	cancel()
 	if err != nil {
 		return nil, err
 	}
+	raw := len(page)
+	page = focusPage(cleanPage(page), weights, maxPageChars)
 	if strings.TrimSpace(page) == "" {
 		return nil, errors.New("empty page")
 	}
-	d.trace("agent: fetched %s (%d chars)", url, len(page))
-	if len(page) > maxPageChars {
-		d.trace("agent: truncating %s to %d chars", url, maxPageChars)
-		page = page[:maxPageChars]
+	d.trace("agent: fetched %s (%d chars → %d kept)", url, raw, len(page))
+	var b strings.Builder
+	fmt.Fprintf(&b, "Question: %s\n\nParts:\n", question)
+	for i, p := range parts {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, p.Need)
 	}
+	fmt.Fprintf(&b, "\nPage (%s):\n%s", url, page)
 	msg, err := d.Complete(ctx, Request{
-		Model: model,
-		Messages: []Message{
-			{Role: "system", Content: extractPrompt},
-			{Role: "user", Content: "Question: " + question + "\n\nPage (" + url + "):\n" + page},
-		},
+		Model:          model,
+		Messages:       []Message{{Role: "system", Content: extractPrompt}, {Role: "user", Content: b.String()}},
 		ResponseFormat: &ResponseFormat{Type: "json_object"},
 	})
 	if err != nil {
@@ -543,8 +555,49 @@ func extract(ctx context.Context, d Deps, model, question, url string) ([]extrac
 	if err := json.Unmarshal([]byte(stripFence(out)), &parsed); err != nil {
 		return nil, fmt.Errorf("extract: invalid JSON from model: %w (reply starts %q)", err, out[:min(len(out), 200)])
 	}
-	d.trace("agent: extracted %d fact(s) from %s", len(parsed.Facts), url)
-	return parsed.Facts, nil
+	squashed, lower := " "+normalize(mdLink.ReplaceAllString(page, "$1"))+" ", strings.ToLower(page)
+	var kept []extracted
+	ungrounded := 0
+	for _, f := range parsed.Facts {
+		f.Claim = strings.TrimSpace(f.Claim)
+		if f.Relevance < 2 || f.Claim == "" {
+			continue
+		}
+		if !grounded(f, squashed, lower) {
+			ungrounded++
+			continue
+		}
+		kept = append(kept, f)
+	}
+	d.trace("agent: %s → %d fact(s) kept of %d (%d not found on the page)", url, len(kept), len(parsed.Facts), ungrounded)
+	return kept, nil
+}
+
+var (
+	mdLink   = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	ellipsis = regexp.MustCompile(`\.\.\.|…`)
+	number   = regexp.MustCompile(`\d+(?:\.\d+)*`)
+)
+
+// grounded reports whether f's quote is on the page (each piece of an elided
+// quote, as whole words) and every number in its claim is too, so invented
+// facts and misremembered versions, dates or counts are dropped. squashed is
+// the normalized page padded with spaces; lower is the page lowercased.
+func grounded(f extracted, squashed, lower string) bool {
+	if normalize(f.Quote) == "" {
+		return false
+	}
+	for _, piece := range ellipsis.Split(f.Quote, -1) {
+		if q := normalize(piece); q != "" && !strings.Contains(squashed, " "+q+" ") {
+			return false
+		}
+	}
+	for _, n := range number.FindAllString(f.Claim, -1) {
+		if !hasWord(lower, n) {
+			return false
+		}
+	}
+	return true
 }
 
 // stripFence removes a ```json ... ``` wrapper some models add despite JSON mode.
@@ -558,31 +611,37 @@ func stripFence(s string) string {
 	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), "```"))
 }
 
-// merge drops unrelated facts, dedupes claims that normalize identically
-// (collecting every source that stated them), and ranks by relevance, then by
-// how many sources agree.
-// ponytail: exact match after normalization; the synthesis prompt merges
-// near-duplicates. Add embedding/small-model clustering if that falls short.
+// dupJaccard is the word overlap at which two claims count as the same fact.
+const dupJaccard = 0.8
+
+// merge dedupes claims across sources (collecting every source that stated
+// them) and ranks by relevance, then by how many sources agree. Claims are
+// duplicates when their word sets overlap by dupJaccard and they state the
+// same numbers, so "targets SDK 35" and "targets SDK 36" never merge.
 func merge(sources []Source, perSource [][]extracted) []Fact {
 	var facts []Fact
-	index := map[string]int{}
+	var words []map[string]bool
+	var nums [][]string
 	for i, list := range perSource {
 		id := sources[i].ID
 		for _, e := range list {
-			claim := strings.TrimSpace(e.Claim)
-			if e.Relevance <= 0 || claim == "" {
+			w := wordSet(e.Claim)
+			if len(w) == 0 {
 				continue
 			}
-			key := normalize(claim)
-			j, ok := index[key]
-			if !ok {
-				index[key] = len(facts)
-				facts = append(facts, Fact{Claim: claim, Relevance: e.Relevance, Sources: []int{id}})
+			n := number.FindAllString(e.Claim, -1)
+			j := slices.IndexFunc(words, func(o map[string]bool) bool { return jaccard(w, o) >= dupJaccard })
+			if j >= 0 && !slices.Equal(nums[j], n) {
+				j = -1
+			}
+			if j < 0 {
+				words, nums = append(words, w), append(nums, n)
+				facts = append(facts, Fact{Claim: e.Claim, Relevance: e.Relevance, Sources: []int{id}})
 				continue
 			}
 			f := &facts[j]
 			f.Relevance = max(f.Relevance, e.Relevance)
-			if f.Sources[len(f.Sources)-1] != id {
+			if !slices.Contains(f.Sources, id) {
 				f.Sources = append(f.Sources, id)
 			}
 		}
@@ -596,14 +655,34 @@ func merge(sources []Source, perSource [][]extracted) []Fact {
 	return facts
 }
 
-// normalize lowercases s, drops punctuation and collapses whitespace so
-// trivially different phrasings of the same claim share a key.
+// wordSet is the set of normalized words in s.
+func wordSet(s string) map[string]bool {
+	w := map[string]bool{}
+	for _, f := range strings.Fields(normalize(s)) {
+		w[f] = true
+	}
+	return w
+}
+
+// jaccard is |a∩b| / |a∪b| for non-empty sets.
+func jaccard(a, b map[string]bool) float64 {
+	n := 0
+	for w := range a {
+		if b[w] {
+			n++
+		}
+	}
+	return float64(n) / float64(len(a)+len(b)-n)
+}
+
+// normalize lowercases s, turns punctuation into spaces and collapses
+// whitespace, so trivially different phrasings share a form.
 func normalize(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return unicode.ToLower(r)
 		}
-		return -1
+		return ' '
 	}, s)
 	return strings.Join(strings.Fields(s), " ")
 }

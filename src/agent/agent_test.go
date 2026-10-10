@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,8 +16,8 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// fakeDeps serves three pages (c fails to fetch); the extract model returns a
-// shared claim for a and b, plus an unrelated fact that must be dropped.
+// fakeDeps serves search results for the shallow mode; the model answers
+// from the snippets.
 func fakeDeps(t *testing.T, synthIn *string) Deps {
 	return Deps{
 		Search: func(context.Context, string) ([]config.SearchResult, error) {
@@ -31,21 +33,11 @@ func fakeDeps(t *testing.T, synthIn *string) Deps {
 			return "page " + url, nil
 		},
 		Complete: func(_ context.Context, req Request) (Message, error) {
-			user := req.Messages[len(req.Messages)-1].Content
-			if req.ResponseFormat == nil {
-				if req.Model != "big" || req.ReasoningEffort != "high" {
-					t.Errorf("synthesis model=%q effort=%q, want big/high", req.Model, req.ReasoningEffort)
-				}
-				*synthIn = user
-				return Message{Content: "answer [1][2]"}, nil
+			if req.Model != "big" || req.ReasoningEffort != "high" {
+				t.Errorf("answer model=%q effort=%q, want big/high", req.Model, req.ReasoningEffort)
 			}
-			if req.Model != "small" || req.ReasoningEffort != "" {
-				t.Errorf("extract model=%q effort=%q, want small/none", req.Model, req.ReasoningEffort)
-			}
-			if strings.Contains(user, "https://a") {
-				return Message{Content: "```json\n" + `{"facts":[{"claim":"Android 17 adds X.","relevance":3},{"claim":"Buy now!","relevance":0}]}` + "\n```"}, nil
-			}
-			return Message{Content: `{"facts":[{"claim":"android 17 adds x","relevance":2},{"claim":"Y is faster","relevance":1}]}`}, nil
+			*synthIn = req.Messages[len(req.Messages)-1].Content
+			return Message{Content: "answer [1][2]"}, nil
 		},
 	}
 }
@@ -142,59 +134,154 @@ func TestRunNoResults(t *testing.T) {
 	}
 }
 
-// toolCall builds a model tool call for scripted research turns.
+// toolCall builds a model tool call for scripted turns.
 func toolCall(id, name, args string) ToolCall {
 	var c ToolCall
 	c.ID, c.Type, c.Function.Name, c.Function.Arguments = id, "function", name, args
 	return c
 }
 
-func TestResearchLoop(t *testing.T) {
-	d := fakeDeps(t, new(string))
-	extract := d.Complete
-	turn := 0
-	d.Complete = func(ctx context.Context, req Request) (Message, error) {
-		if req.ResponseFormat != nil {
-			return extract(ctx, req) // fetch wrapper → extract model
-		}
-		if req.ReasoningEffort != "high" {
-			t.Errorf("research effort = %q", req.ReasoningEffort)
-		}
-		turn++
-		switch turn {
-		case 1:
-			return Message{Role: "assistant", ToolCalls: []ToolCall{toolCall("s1", "search", `{"query":"android 17"}`)}}, nil
-		case 2:
-			if last := req.Messages[len(req.Messages)-1]; last.Role != "tool" || !strings.Contains(last.Content, "https://b") {
-				t.Errorf("search result not fed back: %+v", last)
+// TestResearch scripts a deep run: part 1 (features) is covered in round 1,
+// part 2 (release date) only by the gap round's page. Invented facts and wrong
+// numbers are dropped before the answer model sees anything.
+func TestResearch(t *testing.T) {
+	pages := map[string]string{
+		"https://a.dev/new":  "# Android 17\n\nAndroid 17 adds [desktop windowing](https://a.dev/w) on tablets.\n",
+		"https://b.com/x":    "Android 17 adds desktop windowing.\n",
+		"https://c.org/f":    "Buy our phones today.\n",
+		"https://d.dev/date": "Android 17 ships in June 2026.\n",
+	}
+	results := map[string][]config.SearchResult{
+		"android 17 whats new":         {{Title: "Android 17 new", URL: "https://a.dev/new"}, {Title: "Android 17", URL: "https://b.com/x"}},
+		"android 17 features":          {{URL: "https://a.dev/new"}, {Title: "Phones", URL: "https://c.org/f"}},
+		"android 17 release date":      {{URL: "https://b.com/x"}},
+		"When is Android 17 released?": {{Title: "Android 17 date", URL: "https://d.dev/date"}},
+	}
+	extracts := map[string]string{
+		"https://a.dev/new": `{"facts":[
+			{"claim":"Android 17 adds desktop windowing.","quote":"Android 17 adds desktop windowing on tablets","parts":[1],"relevance":3},
+			{"claim":"Android 17 launched in 2025.","quote":"Android 17 adds","parts":[2],"relevance":3},
+			{"claim":"Android 17 has a new camera app.","quote":"a brand new camera app","parts":[1],"relevance":3}]}`,
+		"https://b.com/x":    `{"facts":[{"claim":"android 17 adds desktop windowing","quote":"Android 17 adds desktop windowing.","parts":[1],"relevance":2}]}`,
+		"https://c.org/f":    `{"facts":[{"claim":"Buy phones","quote":"Buy our phones today","parts":[],"relevance":0}]}`,
+		"https://d.dev/date": `{"facts":[{"claim":"Android 17 ships in June 2026.","quote":"Android 17 ships in June 2026","parts":[2],"relevance":3}]}`,
+	}
+	var mu sync.Mutex
+	var searches []string
+	var brief string
+	d := Deps{
+		Search: func(_ context.Context, q string) ([]config.SearchResult, error) {
+			mu.Lock()
+			searches = append(searches, q)
+			mu.Unlock()
+			return results[q], nil
+		},
+		Fetch: func(_ context.Context, url string) (string, error) { return pages[url], nil },
+		Complete: func(_ context.Context, req Request) (Message, error) {
+			sys, user := req.Messages[0].Content, req.Messages[1].Content
+			switch sys {
+			case deepPlanPrompt:
+				return Message{Content: `{"parts":[{"need":"What is new in Android 17?","query":"android 17 features"},` +
+					`{"need":"When is Android 17 released?","query":"android 17 release date"}]}`}, nil
+			case extractPrompt:
+				if req.Model != "small" || req.ReasoningEffort != "" {
+					t.Errorf("extract model=%q effort=%q, want small/none", req.Model, req.ReasoningEffort)
+				}
+				for url, out := range extracts {
+					if strings.Contains(user, "Page ("+url+")") {
+						return Message{Content: out}, nil
+					}
+				}
+				t.Errorf("unexpected extract input:\n%s", user)
+				return Message{Content: `{"facts":[]}`}, nil
 			}
-			return Message{Role: "assistant", ToolCalls: []ToolCall{
-				toolCall("f1", "fetch", `{"url":"https://a"}`),
-				toolCall("f2", "fetch", `{"url":"https://b"}`),
-				toolCall("f3", "fetch", `{"url":"https://c"}`),
-			}}, nil
-		default:
-			n := len(req.Messages)
-			if req.Tools != nil {
-				t.Fatalf("turn %d: expected forced answer without tools", turn)
+			if req.Model != "big" || req.ReasoningEffort != "high" || req.Tools != nil {
+				t.Errorf("answer model=%q effort=%q tools=%v, want big/high/none", req.Model, req.ReasoningEffort, req.Tools)
 			}
-			if !strings.Contains(req.Messages[n-4].Content, "Android 17 adds X.") || !strings.HasPrefix(req.Messages[n-2].Content, "error:") {
-				t.Errorf("fetch results not fed back: %+v", req.Messages[n-4:])
-			}
-			return Message{Content: "X ships [1]"}, nil
-		}
+			brief = user
+			return Message{Content: "Windowing [1][2]; ships June 2026 [3][9]."}, nil
+		},
 	}
 
-	res, err := Research(context.Background(), d, Options{Model: "big", ExtractModel: "small", ReasoningEffort: "high", MaxSteps: 2}, "android 17")
+	res, err := Research(context.Background(), d, testOpts, "android 17 whats new")
 	if err != nil {
 		t.Fatalf("Research: %v", err)
 	}
-	if res.Answer != "X ships [1]" || len(res.Sources) != 2 || res.Sources[0].Title == "" {
-		t.Fatalf("result = %+v", res)
+	if len(searches) != 4 {
+		t.Errorf("searches = %q, want the question, 2 part queries and 1 gap search", searches)
 	}
-	// a and b state the same claim: merged into one fact citing both; "Buy now!" (relevance 0) dropped.
-	if len(res.Skipped) != 1 || len(res.Facts) != 2 || res.Facts[0].Relevance != 3 || len(res.Facts[0].Sources) != 2 {
-		t.Fatalf("skipped=%+v facts=%+v", res.Skipped, res.Facts)
+	var urls []string
+	for _, s := range res.Sources {
+		urls = append(urls, s.URL)
+	}
+	if strings.Join(urls, " ") != "https://a.dev/new https://b.com/x https://d.dev/date" {
+		t.Fatalf("sources = %v (pages without facts must not be numbered)", urls)
+	}
+	for _, want := range []string{
+		"1. What is new in Android 17? (covered)\n2. When is Android 17 released? (covered)\n",
+		"- Android 17 adds desktop windowing. [1][2]\n- Android 17 ships in June 2026. [3]\n",
+	} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("brief lacks %q:\n%s", want, brief)
+		}
+	}
+	for _, bad := range []string{"2025", "camera", "Buy"} {
+		if strings.Contains(brief, bad) {
+			t.Errorf("brief contains dropped fact %q:\n%s", bad, brief)
+		}
+	}
+	if res.Answer != "Windowing [1][2]; ships June 2026 [3]." || len(res.Facts) != 2 {
+		t.Fatalf("answer=%q facts=%+v", res.Answer, res.Facts)
+	}
+}
+
+func TestResearchNoFacts(t *testing.T) {
+	d := Deps{
+		Search: func(context.Context, string) ([]config.SearchResult, error) {
+			return []config.SearchResult{{URL: "https://x.dev"}}, nil
+		},
+		Fetch: func(context.Context, string) (string, error) { return "nothing useful", nil },
+		Complete: func(_ context.Context, req Request) (Message, error) {
+			if req.ResponseFormat == nil {
+				t.Fatal("the answer model must not run without facts")
+			}
+			return Message{Content: `{"facts":[]}`}, nil // also an empty plan: the question is its own part
+		},
+	}
+	if _, err := Research(context.Background(), d, testOpts, "q"); err == nil || !strings.Contains(err.Error(), "no relevant facts") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestGroundedMergeCites(t *testing.T) {
+	page := "Go 1.25 ships [the new GC](https://go.dev/gc) by default... Tests run faster."
+	squashed, lower := " "+normalize(mdLink.ReplaceAllString(page, "$1"))+" ", strings.ToLower(page)
+	for _, c := range []struct {
+		claim, quote string
+		want         bool
+	}{
+		{"Go 1.25 ships the new GC by default.", "Go 1.25 ships the new GC by default", true},
+		{"Go 1.25 defaults to the new GC and faster tests.", "ships the new GC ... Tests run faster", true},
+		{"Go 1.26 ships the new GC.", "Go 1.25 ships the new GC", false}, // number not on the page
+		{"Go has generics.", "Go has generics", false},                   // quote not on the page
+		{"Tests are fast.", "ests run fast", false},                      // partial words don't match
+		{"Go ships it.", "", false},
+	} {
+		if got := grounded(extracted{Claim: c.claim, Quote: c.quote}, squashed, lower); got != c.want {
+			t.Errorf("grounded(%q, %q) = %t", c.claim, c.quote, got)
+		}
+	}
+
+	facts := merge([]Source{{ID: 1}, {ID: 2}}, [][]extracted{
+		{{Claim: "Android 17 adds desktop windowing.", Relevance: 2}, {Claim: "Apps must target SDK 35 or higher.", Relevance: 3}},
+		{{Claim: "android 17 adds desktop windowing", Relevance: 3}, {Claim: "Apps must target SDK 36 or higher.", Relevance: 3}},
+	})
+	if len(facts) != 3 || facts[0].Claim != "Android 17 adds desktop windowing." || !slices.Equal(facts[0].Sources, []int{1, 2}) || facts[0].Relevance != 3 {
+		t.Fatalf("merge = %+v (same claim merges; SDK 35 vs 36 must not)", facts)
+	}
+
+	if got := knownCites("a [1] b [4] args[7] c[2]", 2); got != "a [1] b  args[7] c[2]" {
+		t.Fatalf("knownCites = %q", got)
 	}
 }
 
@@ -231,7 +318,7 @@ func TestClientComplete(t *testing.T) {
 	c := NewClient(srv.URL+"/v1/", "k")
 	c.FirstTokenTTL = 100 * time.Millisecond
 	msg, err := c.Complete(context.Background(),
-		Request{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}, Tools: researchTools, ReasoningEffort: "low"})
+		Request{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}, Tools: shallowTools, ReasoningEffort: "low"})
 	if err != nil || calls.Load() != 2 || len(msg.ToolCalls) != 1 ||
 		msg.ToolCalls[0].Function.Arguments != `{"query":"q"}` || msg.Usage == nil || msg.Usage.CompletionTokens != 2 {
 		t.Fatalf("Complete = %+v, %v (calls %d)", msg, err, calls.Load())
