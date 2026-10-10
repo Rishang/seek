@@ -48,16 +48,23 @@ type fcSearchResponse struct {
 	Data    fcSearchData `json:"data"`
 }
 
-// fcSearchData groups results by source (v2 returns an object, not a flat array).
-// We only request "web", so the other sources stay empty.
+// fcSearchData groups results by source (v2 returns an object, not a flat
+// array). We request one source per call, so only its list is populated.
 type fcSearchData struct {
-	Web []fcSearchItem `json:"web"`
+	Web    []fcSearchItem `json:"web"`
+	News   []fcSearchItem `json:"news"`
+	Images []fcSearchItem `json:"images"`
 }
 
+// fcSearchItem covers all three sources: web uses description, news uses
+// snippet/date, and images use imageUrl (url is the source page).
 type fcSearchItem struct {
 	URL         string `json:"url"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	Snippet     string `json:"snippet"`
+	Date        string `json:"date"`
+	ImageURL    string `json:"imageUrl"`
 }
 
 type fcFetchRequest struct {
@@ -115,12 +122,20 @@ type fcCrawlStatusResponse struct {
 
 func (p *FirecrawlProvider) SupportsTimeRange() bool { return true }
 
+func (p *FirecrawlProvider) SupportsKind(kind string) bool {
+	return kind == config.KindNews || kind == config.KindImages
+}
+
 func (p *FirecrawlProvider) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
+	source := opts.Kind
+	if source == config.KindWeb {
+		source = "web"
+	}
 	body := fcSearchRequest{
 		Query:   query,
 		Limit:   10,
 		TBS:     googleTBS(opts.TimeRange),
-		Sources: []string{"web"},
+		Sources: []string{source},
 	}
 
 	var resp fcSearchResponse
@@ -128,12 +143,25 @@ func (p *FirecrawlProvider) Search(ctx context.Context, query string, opts confi
 		return nil, err
 	}
 
-	results := make([]config.SearchResult, len(resp.Data.Web))
-	for i, item := range resp.Data.Web {
+	items := resp.Data.Web
+	switch opts.Kind {
+	case config.KindNews:
+		items = resp.Data.News
+	case config.KindImages:
+		items = resp.Data.Images
+	}
+	results := make([]config.SearchResult, len(items))
+	for i, item := range items {
+		snippet := item.Description
+		if snippet == "" {
+			snippet = item.Snippet
+		}
 		results[i] = config.SearchResult{
-			Title:   item.Title,
-			URL:     item.URL,
-			Snippet: item.Description,
+			Title:         item.Title,
+			URL:           item.URL,
+			Snippet:       snippet,
+			PublishedDate: item.Date,
+			ImageURL:      item.ImageURL,
 		}
 	}
 	return results, nil
@@ -176,6 +204,12 @@ func (p *FirecrawlProvider) Fetch(ctx context.Context, url string, opts config.F
 // scrape includes the caption track when one exists (no ASR fallback), along
 // with the page title and description.
 func (p *FirecrawlProvider) Transcribe(ctx context.Context, url, _ string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
+}
+
+// Parse converts a document URL to markdown. Scrape auto-detects the file type: PDF,
+// docx/doc/odt/rtf, and xlsx/xls (each sheet becomes a table).
+func (p *FirecrawlProvider) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
 	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
 }
 
@@ -250,7 +284,9 @@ func (p *FirecrawlProvider) Map(ctx context.Context, url string, limit int) ([]c
 var (
 	_ MapProvider        = (*FirecrawlProvider)(nil)
 	_ SearchProvider     = (*FirecrawlProvider)(nil)
+	_ KindSearcher       = (*FirecrawlProvider)(nil)
 	_ FetchProvider      = (*FirecrawlProvider)(nil)
 	_ CrawlProvider      = (*FirecrawlProvider)(nil)
 	_ TranscribeProvider = (*FirecrawlProvider)(nil)
+	_ ParseProvider      = (*FirecrawlProvider)(nil)
 )

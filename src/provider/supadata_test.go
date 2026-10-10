@@ -106,3 +106,12 @@ func TestSupadataMapAppliesLimit(t *testing.T) {
 		t.Fatalf("links = %+v", links)
 	}
 }
+
+func TestLooksBinary(t *testing.T) {
+	if looksBinary("# Title\n\nplain markdown text") {
+		t.Error("markdown flagged as binary")
+	}
+	if !looksBinary("PK\x03\x04\x14\x00\x06\x00��[Content_Types].xml �(��") {
+		t.Error("zip bytes not flagged as binary")
+	}
+}

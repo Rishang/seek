@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rishang/seek/config"
 )
 
-// SupadataProvider supports fetch, crawl, map, and transcribe via the Supadata API.
+// SupadataProvider supports fetch, crawl, map, parse, and transcribe via the Supadata API.
 // Docs: https://docs.supadata.ai
 //
 // Transcribe accepts any video page URL (YouTube, TikTok, Instagram, X,
@@ -58,13 +59,23 @@ type supadataCrawlStatus struct {
 // ---- Fetch ----
 
 // Fetch scrapes a page. Supadata only returns markdown, so the requested
-// output format is ignored.
+// output format is ignored. It parses PDFs but passes Office files (docx,
+// xlsx) through as raw zip bytes, which are rejected so auto fails over.
 func (p *SupadataProvider) Fetch(ctx context.Context, url string, _ config.FetchOptions) (*config.FetchResult, error) {
 	var page supadataPage
 	if _, err := p.do(ctx, "fetch", http.MethodGet, supadataBase+"/web/scrape", map[string]string{"url": url}, nil, &page); err != nil {
 		return nil, err
 	}
+	if looksBinary(page.Content) {
+		return nil, fmt.Errorf("supadata fetch: %s returned unparsed binary content", url)
+	}
 	return &config.FetchResult{URL: url, Content: page.Content, Format: string(config.FormatMarkdown)}, nil
+}
+
+// Parse converts a document URL to markdown. PDFs only; Office files come back as raw
+// bytes and are rejected by Fetch.
+func (p *SupadataProvider) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
 }
 
 // ---- Crawl ----
@@ -171,6 +182,23 @@ func (p *SupadataProvider) do(ctx context.Context, op, method, endpoint string, 
 	return resp.StatusCode, p.expectOK(op, resp)
 }
 
+// looksBinary reports whether s is undecoded file bytes rather than text: more
+// than 5% of its first 1 KiB is U+FFFD or control characters.
+// ponytail: sampling heuristic; switch to a content-type check if it misfires.
+func looksBinary(s string) bool {
+	var bad, n int
+	for _, r := range s {
+		if n == 1024 {
+			break
+		}
+		n++
+		if r == utf8.RuneError || (r < 0x20 && r != '\n' && r != '\r' && r != '\t') {
+			bad++
+		}
+	}
+	return n > 0 && bad*20 > n
+}
+
 // sleepCtx waits d or until ctx is done.
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	select {
@@ -187,4 +215,5 @@ var (
 	_ FetchProvider      = (*SupadataProvider)(nil)
 	_ CrawlProvider      = (*SupadataProvider)(nil)
 	_ TranscribeProvider = (*SupadataProvider)(nil)
+	_ ParseProvider      = (*SupadataProvider)(nil)
 )

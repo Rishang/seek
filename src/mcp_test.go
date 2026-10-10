@@ -45,10 +45,10 @@ func TestMCPToolsListHasAllTools(t *testing.T) {
 	resp := dispatchMCP(context.Background(), &rpcRequest{Method: "tools/list", ID: json.RawMessage("2")}, "", authed())
 	res := decodeResult(t, resp)
 	tools, ok := res["tools"].([]any)
-	if !ok || len(tools) != 6 {
-		t.Fatalf("want 6 tools, got %v", res["tools"])
+	if !ok || len(tools) != 7 {
+		t.Fatalf("want 7 tools, got %v", res["tools"])
 	}
-	want := map[string]bool{"search": false, "fetch": false, "crawl": false, "transcribe": false, "map": false, "agent": false}
+	want := map[string]bool{"search": false, "fetch": false, "crawl": false, "transcribe": false, "parse": false, "map": false, "agent": false}
 	for _, tl := range tools {
 		name := tl.(map[string]any)["name"].(string)
 		if _, ok := want[name]; !ok {

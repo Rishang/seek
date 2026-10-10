@@ -20,7 +20,7 @@ type opCache struct {
 type Factory struct {
 	providers map[string]Provider
 	caches    map[string]opCache  // keyed by "search" | "fetch" | "crawl"
-	chains    map[string][]string // auto candidate order, keyed by "search" | "fetch" | "transcribe" | "map"
+	chains    map[string][]string // auto candidate order, keyed by "search" | "fetch" | "transcribe" | "parse" | "map"
 }
 
 // NewFactory builds providers from the given list of ProviderConfig entries.
@@ -150,6 +150,24 @@ func (f *Factory) Transcribe(name string) (TranscribeProvider, error) {
 		return nil, fmt.Errorf("provider %q: no configured provider supports transcribe", "auto")
 	}
 	return newAutoTranscribe(chain), nil
+}
+
+// Parse returns a provider that supports parse, or an error. The name "auto"
+// builds a failover chain. Parse results are not cached.
+func (f *Factory) Parse(name string) (ParseProvider, error) {
+	if name != "auto" {
+		return capability[ParseProvider](f, name, "parse")
+	}
+	var chain []autoParseEntry
+	for _, n := range f.chains["parse"] {
+		if pp, err := capability[ParseProvider](f, n, "parse"); err == nil {
+			chain = append(chain, autoParseEntry{name: n, pp: pp})
+		}
+	}
+	if len(chain) == 0 {
+		return nil, fmt.Errorf("provider %q: no configured provider supports parse", "auto")
+	}
+	return &autoParse{chain: chain}, nil
 }
 
 // Map returns a provider that supports map, or an error. The name "auto"

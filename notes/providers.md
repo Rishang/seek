@@ -6,7 +6,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 ## Contents
 
 - [Capability matrix](#capability-matrix)
-- [The `auto` provider](#the-auto-provider-search-fetch-map--transcribe)
+- [The `auto` provider](#the-auto-provider-search-fetch-map-parse--transcribe)
 - [Providers](#providers)
   - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity) · [supadata](#9-supadata)
 - [Auth](#auth)
@@ -17,26 +17,42 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 
 ## Capability matrix
 
-| Provider        | Search | Fetch | Crawl | Map | Transcribe | Time range | Published date | File              |
-|-----------------|:------:|:-----:|:-----:|:---:|:----------:|:----------:|:--------------:|-------------------|
-| firecrawl       |   ✓    |   ✓   |   ✓   |  ✓  |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
-| tavily          |   ✓    |   ✓   |   ✓   |  ✓  |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
-| spider.cloud    |   ✓    |   ✓   |   ✓   |  —  |     —      |     ✓      |       —        | `spider.go`       |
-| webcrawlerapi   |   —    |   ✓   |   ✓   |  —  |     —      |     —      |       —        | `webcrawlerapi.go`|
-| lightpanda      |   —    |   ✓   |   —   |  —  |     —      |     —      |       —        | `lightpanda.go`   |
-| brave           |   ✓    |   —   |   —   |  —  |     —      |     ✓      |   `page_age`   | `brave.go`        |
-| exa             |   ✓    |   ✓   |   —   |  —  |     —      |     ✓      | `publishedDate`| `exa.go`          |
-| perplexity      |   ✓    |   —   |   —   |  —  |     —      |     ✓      |     `date`     | `perplexity.go`   |
-| supadata        |   —    |   ✓   |   ✓   |  ✓  |     ✓      |     —      |       —        | `supadata.go`     |
+| Provider        | Search | Fetch | Crawl | Map |   Parse    | Transcribe | Time range | Published date | File              |
+|-----------------|:------:|:-----:|:-----:|:---:|:----------:|:----------:|:----------:|:--------------:|-------------------|
+| firecrawl       |   ✓    |   ✓   |   ✓   |  ✓  | PDF+Office |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
+| tavily          |   ✓    |   ✓   |   ✓   |  ✓  |    PDF     |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
+| spider.cloud    |   ✓    |   ✓   |   ✓   |  —  |     —      |     —      |     ✓      |       —        | `spider.go`       |
+| webcrawlerapi   |   —    |   ✓   |   ✓   |  —  |     —      |     —      |     —      |       —        | `webcrawlerapi.go`|
+| lightpanda      |   —    |   ✓   |   —   |  —  |     —      |     —      |     —      |       —        | `lightpanda.go`   |
+| brave           |   ✓    |   —   |   —   |  —  |     —      |     —      |     ✓      |   `page_age`   | `brave.go`        |
+| exa             |   ✓    |   ✓   |   —   |  —  |     —      |     —      |     ✓      | `publishedDate`| `exa.go`          |
+| perplexity      |   ✓    |   —   |   —   |  —  |     —      |     —      |     ✓      |     `date`     | `perplexity.go`   |
+| supadata        |   —    |   ✓   |   ✓   |  ✓  |    PDF     |     ✓      |     —      |       —        | `supadata.go`     |
 
-Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `MapProvider` / `TranscribeProvider` the type implements
+Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `MapProvider` / `ParseProvider` / `TranscribeProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
+News / Images = also implements `KindSearcher` (`SupportsKind("news"|"images")`); `provider.NamesForKind`
+derives the `--news`/`--images` help text from it.
 
-## The `auto` provider (search, fetch, map & transcribe)
+## News & image search (`SearchOptions.Kind`)
+
+`seek search --news|--images` (MCP/HTTP `kind`) sets `SearchOptions.Kind`. `auto` skips chain
+members that don't support the kind (no attempt recorded); an explicit provider that doesn't is a
+hard error (`checkKind` in `ops.go`), not a warning — a web search would return a different kind
+of result. Image results set `SearchResult.ImageURL` (the image) with `URL` = source page.
+
+| Provider  | News                                   | Images                                                        |
+|-----------|----------------------------------------|---------------------------------------------------------------|
+| brave     | `GET /res/v1/news/search` → `results[]` | `GET /res/v1/images/search` → `results[].properties.url`; no `freshness` |
+|  —  | firecrawl | `sources: ["news"]` → `data.news[]` (`snippet`, `date`) | `sources: ["images"]` → `data.images[]` (`imageUrl`, `url`) |
+| tavily    | `topic: "news"`                         | `include_images` + `include_image_descriptions` → top-level `images[]` (no source page: `URL` = image; description → title) |
+|  ✓  | exa       | `category: "news"`                      | —                                                             |
+
+## The `auto` provider (search, fetch, map, parse & transcribe)
 
 `auto` is a meta-provider (`provider/auto.go`) that tries configured providers in
 priority order and returns the first non-empty result, failing over on either an
-error or an empty result. It is the default for `search`, `fetch`, `map` and `transcribe`. Crawl does
+error or an empty result. It is the default for `search`, `fetch`, `map`, `parse` and `transcribe`. Crawl does
 not support it. `supadata` sits after the page scrapers in `DefaultPriority`, so in
 the transcribe chain tavily/firecrawl answer first and a video with no captions still
 "succeeds" with just the page — use `-p supadata` (or move it up in `priority:`) to
@@ -182,6 +198,18 @@ Example config.yaml priority hint:
 
 All endpoints authenticate with an `x-api-key` header (not bearer).
 
+## Parse (documents)
+
+`Parse` is each provider's page scrape pointed at a document URL. Tested 2026-10-09:
+
+- **firecrawl** — `/v2/scrape` auto-detects PDF (fast text, OCR fallback), docx/doc/odt/rtf, xlsx/xls
+  (per docs; not live-tested, no key).
+- **tavily** — `/extract` parses PDFs to plain text; docx/xlsx fail with `Failed to fetch url`.
+- **supadata** — `/web/scrape` parses PDFs to markdown with tables; docx/xlsx come back as raw zip
+  bytes, which `Fetch` rejects via `looksBinary` so `auto` fails over.
+- **lightpanda** — returns empty content for a PDF; not a parse provider.
+- exa / spider.cloud — undocumented for files; not wired.
+
 Firecrawl's and tavily's `Transcribe` are just a markdown scrape/extract: YouTube pages include
 the caption track when one exists (tavily as a timestamped `### Transcript` section), with no ASR
 fallback, so prefer supadata.
@@ -202,11 +230,11 @@ each provider formats to its own param via helpers in `timerange.go`:
 | Provider     | Param                          | Format (helper)                                      |
 |--------------|--------------------------------|------------------------------------------------------|
 | firecrawl    | `tbs`                          | `cdr:1,cd_min:MM/DD/YYYY,cd_max:...` (`googleTBS`)    |
-| spider.cloud | `tbs`                          | same Google `tbs` (`googleTBS`)                       |
+|  ✓  | spider.cloud | `tbs`                          | same Google `tbs` (`googleTBS`)                       |
 | tavily       | `start_date` / `end_date`      | `YYYY-MM-DD` (`ymd`)                                  |
-| brave        | `freshness`                    | `YYYY-MM-DDtoYYYY-MM-DD` (`braveFreshness`)           |
+|  ✓  | brave        | `freshness`                    | `YYYY-MM-DDtoYYYY-MM-DD` (`braveFreshness`)           |
 | exa          | `startPublishedDate` / `endPublishedDate` | ISO 8601 (`iso8601`)                      |
-| perplexity   | `search_after_date_filter` / `search_before_date_filter` | `M/D/YYYY` (`mdy`)         |
+|  —  | perplexity   | `search_after_date_filter` / `search_before_date_filter` | `M/D/YYYY` (`mdy`)         |
 
 Open bounds drop out (`omitempty` / empty string). If a selected provider lacks
 `TimeRangeSearcher`, `main.go` emits `logx.Warn` and runs the search without the filter.

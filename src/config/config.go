@@ -183,6 +183,7 @@ type Config struct {
 	Crawl  Operation `yaml:"crawl"`
 
 	Transcribe Operation `yaml:"transcribe"`
+	Parse      Operation `yaml:"parse"`
 	Map        Operation `yaml:"map"`
 
 	// Priority is the global "auto" try-order (index 0 = highest priority),
@@ -243,9 +244,17 @@ type TimeRange struct {
 // IsZero reports whether no time bound is set.
 func (t TimeRange) IsZero() bool { return t.Start.IsZero() && t.End.IsZero() }
 
+// Search kinds. The zero value is a regular web search.
+const (
+	KindWeb    = ""
+	KindNews   = "news"
+	KindImages = "images"
+)
+
 // SearchOptions carries optional parameters for a search request.
 type SearchOptions struct {
 	TimeRange TimeRange
+	Kind      string // KindWeb, KindNews, or KindImages
 }
 
 // SearchResult represents a single result from a search provider.
@@ -254,6 +263,7 @@ type SearchResult struct {
 	URL           string `json:"url"`
 	Snippet       string `json:"snippet"`
 	PublishedDate string `json:"published_date,omitempty"`
+	ImageURL      string `json:"image_url,omitempty"` // image searches: the image itself; URL is its source page
 }
 
 // FetchResult holds the result of a fetch request.
@@ -298,6 +308,7 @@ func Default() Config {
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
 
 		Transcribe: Operation{Provider: "auto"},
+		Parse:      Operation{Provider: "auto"},
 		Map:        Operation{Provider: "auto"},
 
 		Priority: append([]string(nil), DefaultPriority...),

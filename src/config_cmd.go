@@ -28,6 +28,7 @@ var (
 	crawlProviders  = provider.NamesFor(provider.CapCrawl)
 
 	transcribeProviders = provider.NamesFor(provider.CapTranscribe)
+	parseProviders      = provider.NamesFor(provider.CapParse)
 	mapProviders        = provider.NamesFor(provider.CapMap)
 )
 
@@ -100,6 +101,7 @@ func printEffectiveConfig(c config.Config, path string) {
 	printOp("fetch", c.Fetch, true, true)
 	printOp("crawl", c.Crawl, true, false)
 	printOp("transcribe", c.Transcribe, false, false)
+	printOp("parse", c.Parse, false, false)
 	printOp("map", c.Map, false, false)
 
 	creds, _ := config.LoadProviders(providersPath())
@@ -194,6 +196,7 @@ func configInitCmd() *cli.Command {
 			&cli.StringFlag{Name: "fetch", Usage: "Fetch provider"},
 			&cli.StringFlag{Name: "crawl", Usage: "Crawl provider"},
 			&cli.StringFlag{Name: "transcribe", Usage: "Transcribe provider"},
+			&cli.StringFlag{Name: "parse", Usage: "Parse provider"},
 			&cli.StringFlag{Name: "map", Usage: "Map provider"},
 			&cli.StringFlag{Name: "format", Usage: "Fetch output format: markdown, html, json"},
 			&cli.IntFlag{Name: "ttl", Usage: "Cache TTL in days (fetch & crawl)"},
@@ -213,7 +216,7 @@ func configInitCmd() *cli.Command {
 }
 
 // initValueFlags are the flags that, when set, switch init to non-interactive.
-var initValueFlags = []string{"search", "fetch", "crawl", "transcribe", "map", "format", "ttl", "cache", "store", "key", "host",
+var initValueFlags = []string{"search", "fetch", "crawl", "transcribe", "parse", "map", "format", "ttl", "cache", "store", "key", "host",
 	"agent-base-url", "agent-key", "agent-model", "agent-extract-model", "agent-reasoning-effort"}
 
 func anyInitFlagSet(cmd *cli.Command) bool {
@@ -454,11 +457,13 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, agentCfg 
 	fetchOpts := append([]string{"auto"}, capableSubset(fetchProviders, configured)...)
 	crawlOpts := capableSubset(crawlProviders, configured)
 	transcribeOpts := append([]string{"auto"}, capableSubset(transcribeProviders, configured)...)
+	parseOpts := append([]string{"auto"}, capableSubset(parseProviders, configured)...)
 	mapOpts := append([]string{"auto"}, capableSubset(mapProviders, configured)...)
 
 	searchP := pickDefault(orValue(c.Search.Provider, "auto"), searchOpts, "auto")
 	fetchP := pickDefault(orValue(c.Fetch.Provider, "auto"), fetchOpts, "auto")
 	transcribeP := pickDefault(orValue(c.Transcribe.Provider, "auto"), transcribeOpts, "auto")
+	parseP := pickDefault(orValue(c.Parse.Provider, "auto"), parseOpts, "auto")
 	mapP := pickDefault(orValue(c.Map.Provider, "auto"), mapOpts, "auto")
 	format := orValue(string(c.Fetch.Options.OutputFormat), "markdown")
 	fetchCache := c.Fetch.Cache.IsEnabled()
@@ -484,6 +489,8 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, agentCfg 
 	}
 	settings = append(settings, huh.NewSelect[string]().Title("Transcribe provider").
 		Options(huh.NewOptions(transcribeOpts...)...).Value(&transcribeP),
+		huh.NewSelect[string]().Title("Parse provider").
+			Options(huh.NewOptions(parseOpts...)...).Value(&parseP),
 		huh.NewSelect[string]().Title("Map provider").
 			Options(huh.NewOptions(mapOpts...)...).Value(&mapP))
 
@@ -528,6 +535,7 @@ func runInitForm(c *config.Config, creds map[string]config.Credential, agentCfg 
 		c.Crawl.Provider = crawlP
 	}
 	c.Transcribe.Provider = transcribeP
+	c.Parse.Provider = parseP
 	c.Map.Provider = mapP
 	c.Fetch.Options.OutputFormat = parseFormat(format)
 	setCacheEnabled(&c.Fetch.Cache, fetchCache)
@@ -621,6 +629,13 @@ func applyInitFlags(cmd *cli.Command, c *config.Config, creds map[string]config.
 			return err
 		}
 		c.Transcribe.Provider = v
+	}
+	if cmd.IsSet("parse") {
+		v := cmd.String("parse")
+		if err := validateProvider("parse", v, append([]string{"auto"}, parseProviders...)); err != nil {
+			return err
+		}
+		c.Parse.Provider = v
 	}
 	if cmd.IsSet("map") {
 		v := cmd.String("map")

@@ -38,7 +38,7 @@ Your coding agent needs the current version of a library. The docs that changed 
 
 So you hand it a search provider key — and then it rate-limits. Or expires. Or the agent stalls mid-task, waiting on a 401 it doesn't know how to recover from.
 
-**seek fixes this.** It sits in front of 9 search/fetch/crawl/map/transcribe providers and fails over silently. Your agent calls `seek search`. If Tavily is rate-limited, Exa answers. If Exa is down, Firecrawl answers. The agent sees a result, never an error.
+**seek fixes this.** It sits in front of 9 search/fetch/crawl/map/parse/transcribe providers and fails over silently. Your agent calls `seek search`. If Tavily is rate-limited, Exa answers. If Exa is down, Firecrawl answers. The agent sees a result, never an error.
 
 ---
 
@@ -126,7 +126,7 @@ description: Search the web and fetch full page content via seek
 
 ```
 seek search -o csv "<query>"
-# output: title,url,snippet,published_date  (one row per result)
+# output: title,url,snippet,published_date,image_url  (one row per result)
 ```
 
 The snippet is substantial — often several sentences, not a teaser. **For many lookups the snippet already is the answer.**
@@ -405,7 +405,7 @@ The MCP config block is the same for every agent that speaks MCP (JSON-RPC 2.0 o
 }
 ```
 
-`seek mcp` exposes six tools — `search`, `fetch`, `crawl`, `map` (site URL list), `transcribe` (video URL → transcript), and `agent` (a cited answer to a question; `deep: true` for multi-step research) — with the same provider failover as the CLI. The agent sees tools, not providers. `agent` needs the `agent:` block in provider.yaml.
+`seek mcp` exposes seven tools — `search`, `fetch`, `crawl`, `map` (site URL list), `parse` (document URL → markdown), `transcribe` (video URL → transcript), and `agent` (a cited answer to a question; `deep: true` for multi-step research) — with the same provider failover as the CLI. The agent sees tools, not providers. `agent` needs the `agent:` block in provider.yaml.
 
 ### HTTP API — Any custom tool or pipeline
 
@@ -418,6 +418,11 @@ curl -s localhost:8787/search \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"query": "latest golang release notes"}'
 
+# news or images: add "kind"; image results carry image_url
+curl -s localhost:8787/search \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query": "golang release", "kind": "news", "range": 7}'
+
 curl -s localhost:8787/fetch \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"url": "https://go.dev/doc/devel/release", "format": "markdown"}'
@@ -426,6 +431,11 @@ curl -s localhost:8787/fetch \
 curl -s localhost:8787/map \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"url": "https://go.dev", "limit": 50}'
+
+# document → markdown: returns {url, content, format}
+curl -s localhost:8787/parse \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"url": "https://www.dhwu.ac.in/pdf/1669289843_Doc.pdf"}'
 
 # video transcript: returns {url, content, format}
 curl -s localhost:8787/transcribe \
@@ -462,17 +472,17 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 
 9 providers, one interface. Configure one or all — `auto` uses whatever has a key.
 
-| Provider | search | fetch | crawl | map | transcribe | Key env var |
-|---|---|---|---|---|---|---|
-| firecrawl | ✓ | ✓ | ✓ | ✓ | ✓ (captions) | `FIRECRAWL_API_KEY` |
-| tavily | ✓ | ✓ | ✓ | ✓ | ✓ (captions) | `TAVILY_API_KEY` |
-| spider.cloud | ✓ | ✓ | ✓ | — | — | `SPIDER_API_KEY` |
-| exa | ✓ | ✓ | — | — | — | `EXA_API_KEY` |
-| perplexity | ✓ | — | — | — | — | `PERPLEXITY_API_KEY` |
-| brave | ✓ | — | — | — | — | `BRAVE_API_KEY` |
-| webcrawlerapi | — | ✓ | ✓ | — | — | `WEBCRAWLERAPI_API_KEY` |
-| lightpanda | — | ✓ | — | — | — | `LIGHTPANDA_API_KEY` |
-| supadata | — | ✓ | ✓ | ✓ | ✓ (captions + AI) | `SUPADATA_API_KEY` |
+| Provider | search | fetch | crawl | map | parse | transcribe | Key env var |
+|---|---|---|---|---|---|---|---|
+| firecrawl | ✓ | ✓ | ✓ | ✓ | ✓ (PDF + Office) | ✓ (captions) | `FIRECRAWL_API_KEY` |
+| tavily | ✓ | ✓ | ✓ | ✓ | ✓ (PDF) | ✓ (captions) | `TAVILY_API_KEY` |
+| spider.cloud | ✓ | ✓ | ✓ | — | — | — | `SPIDER_API_KEY` |
+| exa | ✓ | ✓ | — | — | — | — | `EXA_API_KEY` |
+| perplexity | ✓ | — | — | — | — | — | `PERPLEXITY_API_KEY` |
+| brave | ✓ | — | — | — | — | — | `BRAVE_API_KEY` |
+| webcrawlerapi | — | ✓ | ✓ | — | — | — | `WEBCRAWLERAPI_API_KEY` |
+| lightpanda | — | ✓ | — | — | — | — | `LIGHTPANDA_API_KEY` |
+| supadata | — | ✓ | ✓ | ✓ | ✓ (PDF) | ✓ (captions + AI) | `SUPADATA_API_KEY` |
 
 `firecrawl` and `lightpanda` are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
 
@@ -481,8 +491,11 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 | Operation | Default `auto` order |
 |---|---|
 | search | tavily → exa → firecrawl → spider.cloud → brave → perplexity |
+| search `--news` | tavily → exa → firecrawl → brave |
+| search `--images` | tavily → firecrawl → brave |
 | fetch | tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata |
 | map | tavily → firecrawl → supadata |
+| parse | tavily → firecrawl → supadata |
 | transcribe | tavily → firecrawl → supadata |
 | crawl | no `auto` — uses the configured provider (default `firecrawl`) |
 
@@ -499,6 +512,24 @@ seek map -p firecrawl https://go.dev | jq -r '.[].url' | rg /doc/
 ```
 
 `-n/--limit` caps the result (default 100). firecrawl also returns each page's title and description; tavily and supadata return URLs only. Also the `map` MCP tool (`{url, provider?, limit?}`) and `POST /map` on `seek serve`.
+
+### 📄 Parse
+
+`seek parse <url>` turns a document URL into markdown — PDFs, Word, and Excel files, no download step.
+
+| Provider | PDF | docx / doc / odt / rtf | xlsx / xls |
+|---|---|---|---|
+| firecrawl | ✓ (OCR fallback for scans) | ✓ | ✓ (each sheet → table) |
+| tavily | ✓ (plain text) | — | — |
+| supadata | ✓ (markdown, tables kept) | — | — |
+
+```sh
+seek parse 'https://www.dhwu.ac.in/pdf/1669289843_Doc.pdf'      # auto: first provider that parses it wins
+seek parse -p firecrawl https://example.com/report.xlsx > report.md
+seek config init --parse firecrawl --yes                         # pin a default
+```
+
+In `auto`, a provider that can't read the file type errors out and the next one is tried — so a `.docx` falls through tavily and supadata to firecrawl. Configure firecrawl for Office files. Also the `parse` MCP tool (`{url, provider?}`) and `POST /parse` on `seek serve`.
 
 ### 🎬 Transcribe
 
@@ -529,14 +560,15 @@ Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tav
 
 | Command | What it does |
 |---|---|
-| `seek search <query>` | Web search with auto-failover across providers |
+| `seek search <query>` | Web, news (`--news`), or image (`--images`) search with auto-failover across providers |
 | `seek fetch <url>` | Fetch a page as markdown, html, or json |
 | `seek crawl <url>` | Crawl a site and return its pages |
 | `seek map <url>` | List a site's URLs without scraping them — see [Map](#️-map) |
+| `seek parse <url>` | Document URL (PDF, docx, xlsx, …) → markdown — see [Parse](#-parse) |
 | `seek transcribe <url>` | Transcript of a video URL (YouTube, TikTok, X, media files, …) — see [Transcribe](#-transcribe) |
 | `seek agent <question>` | Fast cited answer: one search, then answers from the snippets or reads a few results. Also the `agent` MCP tool and `POST /agent`. `--deep` runs multi-turn research with seek's search/fetch as tools; fetched pages are distilled into deduped facts by a small model ([notes](notes/agent.md)) |
 | `seek mcp` | Start MCP server over stdio (JSON-RPC 2.0) |
-| `seek serve` | Start HTTP API (`/search`, `/fetch`, `/crawl`, `/map`, `/transcribe`, `/agent`) |
+| `seek serve` | Start HTTP API (`/search`, `/fetch`, `/crawl`, `/map`, `/parse`, `/transcribe`, `/agent`) |
 | `seek config init` | Configure providers and API keys (interactive or `--yes` for scripting) |
 | `seek config view` | Show current config and which keys are set |
 | `seek version` | Print the seek version |
@@ -547,15 +579,16 @@ Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tav
 
 | Command | Flags |
 |---|---|
-| `search` | `-p/--provider`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
+| `search` | `-p/--provider`, `--news`, `--images`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
 | `fetch` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o json\|csv`, `--no-cache` |
 | `map` | `-p/--provider`, `-n/--limit N` (default 100), `-o json\|csv` |
+| `parse` | `-p/--provider` |
 | `transcribe` | `-p/--provider`, `-l/--lang <ISO 639-1>` (supadata only) |
 | `agent` | `--deep`, `-e/--reasoning-effort low\|medium\|high`, `--sources N`, `--max-steps N`, `--model`, `--extract-model`, `-o markdown\|json`, `--no-cache` |
 | `serve` | `--addr host:port` (default `127.0.0.1:8787`), `--token` |
 | `mcp` | `--token` |
-| `config init` | `--search`, `--fetch`, `--crawl`, `--transcribe`, `--map`, `--format`, `--ttl <days>`, `--key name=value`, `--host name=url`, `--agent-base-url`, `--agent-key`, `--agent-model`, `--agent-extract-model`, `--agent-reasoning-effort`, `-y/--yes` |
+| `config init` | `--search`, `--fetch`, `--crawl`, `--transcribe`, `--map`, `--parse`, `--format`, `--ttl <days>`, `--key name=value`, `--host name=url`, `--agent-base-url`, `--agent-key`, `--agent-model`, `--agent-extract-model`, `--agent-reasoning-effort`, `-y/--yes` |
 
 ---
 
@@ -581,6 +614,8 @@ config:
   transcribe:
     provider: auto
   map:
+    provider: auto
+  parse:
     provider: auto
 
 providers:
@@ -617,7 +652,7 @@ seek config init --key firecrawl=fc-xxx --key tavily=tvly-xxx --yes
 
 ### Caching
 
-`fetch` and `crawl` results cache locally in SQLite. `search`, `map`, and `transcribe` always hit live. Bypass per-request with `--no-cache`.
+`fetch` and `crawl` results cache locally in SQLite. `search`, `map`, `parse`, and `transcribe` always hit live. Bypass per-request with `--no-cache`.
 
 ### Environment Variables
 

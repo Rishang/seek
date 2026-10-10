@@ -1,7 +1,7 @@
 # `seek mcp` — MCP server (stdio)
 
 `seek mcp` speaks the Model Context Protocol over stdio so MCP-capable agents
-can call seek's search/fetch/crawl/map/transcribe tools with the same provider factory and
+can call seek's search/fetch/crawl/map/parse/transcribe tools with the same provider factory and
 `auto` failover the CLI uses.
 
 ## Transport
@@ -17,7 +17,7 @@ goes to stderr (package `logx`), so it never corrupts the stream.
 |-----------------------------|-----------|
 | `initialize`                | Returns `protocolVersion` (echoes the client's when given, else `2025-06-18`), `capabilities.tools`, and `serverInfo`. |
 | `ping`                      | Returns `{}`. |
-| `tools/list`                | Lists the `search`, `fetch`, `crawl`, `map`, `transcribe`, `agent` tools with JSON-Schema `inputSchema`. |
+| `tools/list`                | Lists the `search`, `fetch`, `crawl`, `map`, `parse`, `transcribe`, `agent` tools with JSON-Schema `inputSchema`. |
 | `tools/call`                | Dispatches to the op runners (`ops.go`). |
 | notifications (no `id`)     | Handled silently, no response (e.g. `notifications/initialized`). |
 | unknown method (with `id`)  | JSON-RPC error `-32601`. |
@@ -25,15 +25,17 @@ goes to stderr (package `logx`), so it never corrupts the stream.
 
 ### Tools
 
-- `search` — args `{query (required), provider?, range?, start?, end?}` → ranked
-  results as JSON text.
+- `search` — args `{query (required), provider?, range?, start?, end?, kind?}` → ranked
+  results as JSON text. `kind` is `web` (default), `news`, or `images`; image results
+  add `image_url`.
 - `fetch` — args `{url (required), provider?, format?}` → page content text.
 - `crawl`  — args `{url (required), provider?}` → crawl result as JSON text.
 - `map` — args `{url (required), provider?, limit?}` → JSON array of links (`url`, plus `title`/`description` from firecrawl). Default limit 100.
+- `parse` — args `{url (required), provider?}` → document (PDF, docx, xlsx, …) as markdown.
 - `transcribe` — args `{url (required), provider?, lang?}` → transcript text (or page markdown with a transcript section, for page-scrape providers).
 
 The argument structs are the *same* types the HTTP server decodes
-(`searchRequest`/`fetchRequest`/`crawlRequest`/`mapRequest`/`transcribeRequest`), so the two surfaces never
+(`searchRequest`/`fetchRequest`/`crawlRequest`/`mapRequest`/`parseRequest`/`transcribeRequest`), so the two surfaces never
 drift.
 
 ### Error convention

@@ -47,9 +47,23 @@ func (a *autoSearch) SupportsTimeRange() bool {
 	return false
 }
 
+// SupportsKind reports true if any provider in the chain can run kind, so a
+// news/images search only fails up front when none can.
+func (a *autoSearch) SupportsKind(kind string) bool {
+	for _, e := range a.chain {
+		if SupportsKind(e.sp, kind) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *autoSearch) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	a.attempts = a.attempts[:0]
 	for _, e := range a.chain {
+		if !SupportsKind(e.sp, opts.Kind) {
+			continue // e.g. perplexity for an images search: not a failure, just not a candidate
+		}
 		res, err := e.sp.Search(ctx, query, opts)
 		if err != nil {
 			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: err})
@@ -135,6 +149,38 @@ func (a *autoTranscribe) Transcribe(ctx context.Context, url, lang string) (*con
 	return nil, chainError("transcribe", a.attempts)
 }
 
+// ---- parse ----
+
+type autoParseEntry struct {
+	name string
+	pp   ParseProvider
+}
+
+type autoParse struct {
+	chain    []autoParseEntry
+	attempts []Attempt // ponytail: mutated per call; single-shot per process, not safe for concurrent reuse
+}
+
+func (a *autoParse) Attempts() []Attempt { return a.attempts }
+
+func (a *autoParse) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
+	a.attempts = a.attempts[:0]
+	for _, e := range a.chain {
+		res, err := e.pp.Parse(ctx, url)
+		if err != nil {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: err})
+			continue
+		}
+		if res == nil || res.Content == "" {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: errEmptyContent})
+			continue
+		}
+		a.attempts = append(a.attempts, Attempt{Provider: e.name})
+		return res, nil
+	}
+	return nil, chainError("parse", a.attempts)
+}
+
 // ---- map ----
 
 type autoMapEntry struct {
@@ -186,11 +232,15 @@ var (
 	_ SearchProvider    = (*autoSearch)(nil)
 	_ AutoReporter      = (*autoSearch)(nil)
 	_ TimeRangeSearcher = (*autoSearch)(nil)
+	_ KindSearcher      = (*autoSearch)(nil)
 	_ FetchProvider     = (*autoFetch)(nil)
 	_ AutoReporter      = (*autoFetch)(nil)
 
 	_ TranscribeProvider = (*autoTranscribe)(nil)
 	_ AutoReporter       = (*autoTranscribe)(nil)
+
+	_ ParseProvider = (*autoParse)(nil)
+	_ AutoReporter  = (*autoParse)(nil)
 
 	_ MapProvider  = (*autoMap)(nil)
 	_ AutoReporter = (*autoMap)(nil)
