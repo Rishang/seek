@@ -154,6 +154,33 @@ func opParse(ctx context.Context, providerName, url string) (*config.FetchResult
 	return result, nil
 }
 
+// defaultMapLimit caps map results when the caller gives no limit.
+const defaultMapLimit = 100
+
+// opMap runs a map. An empty providerName uses the configured default; a
+// non-positive limit uses defaultMapLimit.
+func opMap(ctx context.Context, providerName, url string, limit int) ([]config.MapLink, error) {
+	if providerName == "" {
+		providerName = cfg.Map.Provider
+	}
+	if limit <= 0 {
+		limit = defaultMapLimit
+	}
+	logx.Debug("op: map provider=%s url=%q limit=%d", providerName, url, limit)
+	mp, err := factory.Map(providerName)
+	if err != nil {
+		return nil, err
+	}
+	links, err := mp.Map(ctx, url, limit)
+	logAutoAttempts(mp)
+	if err != nil {
+		logx.Debug("op: map failed: %v", err)
+		return nil, err
+	}
+	logx.Debug("op: map ok, %d link(s)", len(links))
+	return links, nil
+}
+
 // fmtRange renders a time range compactly for debug logs.
 func fmtRange(tr config.TimeRange) string {
 	if tr.IsZero() {

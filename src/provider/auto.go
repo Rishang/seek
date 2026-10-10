@@ -181,6 +181,38 @@ func (a *autoParse) Parse(ctx context.Context, url string) (*config.FetchResult,
 	return nil, chainError("parse", a.attempts)
 }
 
+// ---- map ----
+
+type autoMapEntry struct {
+	name string
+	mp   MapProvider
+}
+
+type autoMap struct {
+	chain    []autoMapEntry
+	attempts []Attempt // ponytail: mutated per call; single-shot per process, not safe for concurrent reuse
+}
+
+func (a *autoMap) Attempts() []Attempt { return a.attempts }
+
+func (a *autoMap) Map(ctx context.Context, url string, limit int) ([]config.MapLink, error) {
+	a.attempts = a.attempts[:0]
+	for _, e := range a.chain {
+		links, err := e.mp.Map(ctx, url, limit)
+		if err != nil {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: err})
+			continue
+		}
+		if len(links) == 0 {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: errNoResults})
+			continue
+		}
+		a.attempts = append(a.attempts, Attempt{Provider: e.name})
+		return links, nil
+	}
+	return nil, chainError("map", a.attempts)
+}
+
 // chainError aggregates the failed attempts into a single descriptive error.
 func chainError(op string, attempts []Attempt) error {
 	parts := make([]string, 0, len(attempts))
@@ -209,4 +241,7 @@ var (
 
 	_ ParseProvider = (*autoParse)(nil)
 	_ AutoReporter  = (*autoParse)(nil)
+
+	_ MapProvider  = (*autoMap)(nil)
+	_ AutoReporter = (*autoMap)(nil)
 )

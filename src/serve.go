@@ -21,7 +21,7 @@ import (
 
 const defaultMaxConcurrent = 50
 
-// serveCmd exposes search/fetch/crawl/parse/transcribe/agent over a small JSON HTTP API. net/http
+// serveCmd exposes search/fetch/crawl/map/parse/transcribe/agent over a small JSON HTTP API. net/http
 // serves every request in its own goroutine, so the server is concurrent by
 // default; the operation runners only read the shared factory, so concurrent
 // requests are safe.
@@ -30,11 +30,12 @@ func serveCmd() *cli.Command {
 		Name:      "serve",
 		Usage:     "Run seek as an HTTP API",
 		UsageText: "seek serve [--addr host:port] [--token TOKEN]",
-		Description: "Expose search, fetch, crawl, parse, transcribe, and agent over HTTP as JSON. Listens on\n" +
+		Description: "Expose search, fetch, crawl, map, parse, transcribe, and agent over HTTP as JSON. Listens on\n" +
 			"127.0.0.1:8787 by default.\n\n" +
 			"  POST /search  {\"query\":\"...\",\"provider\":\"auto\",\"range\":7,\"kind\":\"news\"}\n" +
 			"  POST /fetch  {\"url\":\"https://...\",\"format\":\"markdown\"}\n" +
 			"  POST /crawl   {\"url\":\"https://...\"}\n" +
+			"  POST /map     {\"url\":\"https://...\",\"limit\":100}\n" +
 			"  POST /parse   {\"url\":\"https://.../doc.pdf\"}\n" +
 			"  POST /transcribe {\"url\":\"https://youtube.com/...\",\"lang\":\"en\"}\n" +
 			"  POST /agent   {\"question\":\"...\",\"deep\":false}\n" +
@@ -120,6 +121,7 @@ func serveMux(token string) http.Handler {
 	mux.HandleFunc("POST /search", auth(token, handleSearch))
 	mux.HandleFunc("POST /fetch", auth(token, handleFetch))
 	mux.HandleFunc("POST /crawl", auth(token, handleCrawl))
+	mux.HandleFunc("POST /map", auth(token, handleMap))
 	mux.HandleFunc("POST /parse", auth(token, handleParse))
 	mux.HandleFunc("POST /transcribe", auth(token, handleTranscribe))
 	mux.HandleFunc("POST /agent", auth(token, handleAgent))
@@ -278,6 +280,29 @@ func handleParse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+type mapRequest struct {
+	URL      string `json:"url"`
+	Provider string `json:"provider,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
+func handleMap(w http.ResponseWriter, r *http.Request) {
+	var req mapRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.URL == "" {
+		httpError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	links, err := opMap(r.Context(), req.Provider, req.URL, req.Limit)
+	if err != nil {
+		httpError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": links})
 }
 
 type transcribeRequest struct {

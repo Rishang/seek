@@ -134,6 +134,7 @@ func main() {
 	factory.SetAutoChain("fetch", autoCandidates("fetch", cfg.Priority))
 	factory.SetAutoChain("transcribe", autoCandidates("transcribe", cfg.Priority))
 	factory.SetAutoChain("parse", autoCandidates("parse", cfg.Priority))
+	factory.SetAutoChain("map", autoCandidates("map", cfg.Priority))
 
 	store, err := setupCache()
 	if err != nil {
@@ -153,7 +154,7 @@ func main() {
 		Name:        "seek",
 		Version:     version,
 		Usage:       "The OpenRouter for web search",
-		Description: "Run web search, fetch, crawl, parse, and transcribe across pluggable providers.\n\nDocs: " + readmeURL,
+		Description: "Run web search, fetch, crawl, map, parse, and transcribe across pluggable providers.\n\nDocs: " + readmeURL,
 		Flags:       []cli.Flag{verboseFlag},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			if cmd.Bool("verbose") {
@@ -165,6 +166,7 @@ func main() {
 			searchCmd(),
 			fetchCmd(),
 			crawlCmd(),
+			mapCmd(),
 			parseCmd(),
 			transcribeCmd(),
 			agentCmd(),
@@ -244,6 +246,8 @@ func capabilityProviders(op string) []string {
 		return transcribeProviders
 	case "parse":
 		return parseProviders
+	case "map":
+		return mapProviders
 	}
 	return nil
 }
@@ -454,6 +458,29 @@ func parseCmd() *cli.Command {
 			}
 			fmt.Println(result.Content)
 			return nil
+		},
+	}
+}
+
+func mapCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "map",
+		Usage:     "List a site's URLs without scraping them",
+		UsageText: "seek map [-p provider] [-n limit] [-o json|csv] <url>",
+		Flags: []cli.Flag{
+			providerFlag(providerUsage(provider.CapMap, true)),
+			&cli.IntFlag{Name: "limit", Aliases: []string{"n"}, Value: defaultMapLimit, Usage: "Max URLs to return"},
+			outputFlag,
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.NArg() < 1 {
+				return fmt.Errorf("url required")
+			}
+			links, err := opMap(ctx, cmd.String("provider"), cmd.Args().First(), int(cmd.Int("limit")))
+			if err != nil {
+				return err
+			}
+			return render(cmd, links)
 		},
 	}
 }

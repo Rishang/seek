@@ -11,7 +11,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// SupadataProvider supports fetch, crawl, parse, and transcribe via the Supadata API.
+// SupadataProvider supports fetch, crawl, map, parse, and transcribe via the Supadata API.
 // Docs: https://docs.supadata.ai
 //
 // Transcribe accepts any video page URL (YouTube, TikTok, Instagram, X,
@@ -148,6 +148,19 @@ func (p *SupadataProvider) Transcribe(ctx context.Context, url, lang string) (*c
 	return &config.FetchResult{URL: url, Content: resp.Content, Format: "text"}, nil
 }
 
+// ---- Map ----
+
+// Map lists a site's URLs. Supadata takes no limit, so it is applied here.
+func (p *SupadataProvider) Map(ctx context.Context, url string, limit int) ([]config.MapLink, error) {
+	var resp struct {
+		URLs []string `json:"urls"`
+	}
+	if _, err := p.do(ctx, "map", http.MethodGet, supadataBase+"/web/map", map[string]string{"url": url}, nil, &resp); err != nil {
+		return nil, err
+	}
+	return urlLinks(resp.URLs, limit), nil
+}
+
 // do issues an x-api-key authenticated request and accepts 200 or 202,
 // returning the status so callers can detect async jobs.
 func (p *SupadataProvider) do(ctx context.Context, op, method, endpoint string, params map[string]string, body, out any) (int, error) {
@@ -198,6 +211,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 
 // Compile-time interface checks.
 var (
+	_ MapProvider        = (*SupadataProvider)(nil)
 	_ FetchProvider      = (*SupadataProvider)(nil)
 	_ CrawlProvider      = (*SupadataProvider)(nil)
 	_ TranscribeProvider = (*SupadataProvider)(nil)

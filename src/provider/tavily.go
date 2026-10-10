@@ -8,7 +8,7 @@ import (
 	"github.com/rishang/seek/config"
 )
 
-// TavilyProvider supports search and crawl via Tavily.
+// TavilyProvider supports search, fetch, crawl, and map via Tavily.
 // Docs: https://docs.tavily.com
 type TavilyProvider struct {
 	*httpClient
@@ -247,7 +247,21 @@ func (p *TavilyProvider) Crawl(ctx context.Context, url string) (*config.CrawlRe
 	}, nil
 }
 
+// ---- Map ----
+
+func (p *TavilyProvider) Map(ctx context.Context, url string, limit int) ([]config.MapLink, error) {
+	body := map[string]any{"url": url, "limit": limit}
+	var resp struct {
+		Results []string `json:"results"`
+	}
+	if err := p.post(ctx, "map", "https://api.tavily.com/map", &body, &resp); err != nil {
+		return nil, err
+	}
+	return urlLinks(resp.Results, limit), nil
+}
+
 var (
+	_ MapProvider        = (*TavilyProvider)(nil)
 	_ SearchProvider     = (*TavilyProvider)(nil)
 	_ KindSearcher       = (*TavilyProvider)(nil)
 	_ FetchProvider      = (*TavilyProvider)(nil)

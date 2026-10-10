@@ -121,3 +121,26 @@ func TestAutoTranscribeFailsOverOnErrorAndEmpty(t *testing.T) {
 		t.Fatalf("res=%v err=%v attempts=%v", res, err, a.Attempts())
 	}
 }
+
+// fakeFetch doubles as a mapper: content becomes the single link.
+func (s fakeFetch) Map(_ context.Context, _ string, _ int) ([]config.MapLink, error) {
+	if s.err != nil || s.content == "" {
+		return nil, s.err
+	}
+	return []config.MapLink{{URL: s.content}}, nil
+}
+
+func TestAutoMapFailsOverOnErrorAndEmpty(t *testing.T) {
+	a := &autoMap{chain: []autoMapEntry{
+		{"bad", fakeFetch{err: errors.New("boom")}},
+		{"empty", fakeFetch{}},
+		{"good", fakeFetch{content: "https://x.dev/a"}},
+	}}
+	links, err := a.Map(context.Background(), "https://x.dev", 10)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("links=%v err=%v", links, err)
+	}
+	if n := len(a.Attempts()); n != 3 || a.Attempts()[2].Provider != "good" {
+		t.Fatalf("attempts = %+v", a.Attempts())
+	}
+}
