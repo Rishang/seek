@@ -51,6 +51,11 @@ type TranscribeProvider interface {
 	Transcribe(ctx context.Context, url, lang string) (*config.FetchResult, error)
 }
 
+// ParseProvider converts a document URL (PDF, docx, xlsx, ...) to markdown.
+type ParseProvider interface {
+	Parse(ctx context.Context, url string) (*config.FetchResult, error)
+}
+
 // Provider is any registered provider. The concrete capabilities (search,
 // fetch, crawl) are probed by type-asserting to the interfaces above, so a
 // provider need only implement whichever it supports.

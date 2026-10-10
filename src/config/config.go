@@ -183,6 +183,7 @@ type Config struct {
 	Crawl  Operation `yaml:"crawl"`
 
 	Transcribe Operation `yaml:"transcribe"`
+	Parse      Operation `yaml:"parse"`
 
 	// Priority is the global "auto" try-order (index 0 = highest priority),
 	// filtered to capable+configured providers at runtime. It lives under the
@@ -298,6 +299,7 @@ func Default() Config {
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
 
 		Transcribe: Operation{Provider: "auto"},
+		Parse:      Operation{Provider: "auto"},
 
 		Priority: append([]string(nil), DefaultPriority...),
 	}

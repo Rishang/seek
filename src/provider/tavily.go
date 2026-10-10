@@ -212,6 +212,12 @@ func (p *TavilyProvider) Transcribe(ctx context.Context, url, _ string) (*config
 	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
 }
 
+// Parse converts a document URL to markdown. Extract handles PDFs; Office files fail
+// with "Failed to fetch url", so auto fails over.
+func (p *TavilyProvider) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
+}
+
 // ---- Crawl ----
 
 func (p *TavilyProvider) Crawl(ctx context.Context, url string) (*config.CrawlResult, error) {
@@ -247,4 +253,5 @@ var (
 	_ FetchProvider      = (*TavilyProvider)(nil)
 	_ CrawlProvider      = (*TavilyProvider)(nil)
 	_ TranscribeProvider = (*TavilyProvider)(nil)
+	_ ParseProvider      = (*TavilyProvider)(nil)
 )

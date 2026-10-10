@@ -41,5 +41,5 @@ seek fetch "<url>"             # one page → full markdown on stdout
 ## Flags worth knowing but not often used(rarely required)
 - `seek search -o csv` — CSV instead of JSON (compact; columns `title,url,snippet,published_date,image_url`). Prefer it.
 - `-p firecrawl|tavily|spider.cloud|brave` (search) / `-p firecrawl|tavily|spider.cloud|webcrawlerapi|lightpanda` (fetch) — pin a provider.
-- `--news` / `--images` (search) — news articles, or images (adds `image_url`). Use for current events or when the user wants pictures.
+- `seek parse "<url>"` — document URLs (`.pdf`, `.docx`, `.xlsx`) → markdown. Use it instead of `fetch` for files.
 - `--no-cache` — bypass the result cache for one call.

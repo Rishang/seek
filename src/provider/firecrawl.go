@@ -207,6 +207,12 @@ func (p *FirecrawlProvider) Transcribe(ctx context.Context, url, _ string) (*con
 	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
 }
 
+// Parse converts a document URL to markdown. Scrape auto-detects the file type: PDF,
+// docx/doc/odt/rtf, and xlsx/xls (each sheet becomes a table).
+func (p *FirecrawlProvider) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
+}
+
 // ---- Crawl ----
 
 func (p *FirecrawlProvider) Crawl(ctx context.Context, url string) (*config.CrawlResult, error) {
@@ -268,4 +274,5 @@ var (
 	_ FetchProvider      = (*FirecrawlProvider)(nil)
 	_ CrawlProvider      = (*FirecrawlProvider)(nil)
 	_ TranscribeProvider = (*FirecrawlProvider)(nil)
+	_ ParseProvider      = (*FirecrawlProvider)(nil)
 )

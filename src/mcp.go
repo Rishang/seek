@@ -34,8 +34,9 @@ func mcpCmd() *cli.Command {
 		Usage:     "Run seek as an MCP server (stdio)",
 		UsageText: "seek mcp [--token TOKEN]",
 		Description: "Speak the Model Context Protocol over stdio so MCP-capable agents can\n" +
-			"call seek's search, fetch, crawl, and agent tools. stdout carries the JSON-RPC\n" +
-			"stream; logs go to stderr. Requests are handled concurrently.\n\n" +
+			"call seek's search, fetch, crawl, parse, transcribe, and agent tools. stdout\n" +
+			"carries the JSON-RPC stream; logs go to stderr. Requests are handled\n" +
+			"concurrently.\n\n" +
 			"Auth: set --token (or SEEK_AUTH_TOKEN) to require a matching token in the\n" +
 			"initialize handshake. Without a token the server is unauthenticated.",
 		Flags: []cli.Flag{
@@ -218,7 +219,7 @@ var mcpTools = []obj{
 	},
 	{
 		"name":        "fetch",
-		"description": "Extract a single page's content. Returns the page as markdown (or the requested format).",
+		"description": "Extract a single page's content. Returns the page as markdown (or the requested format). For document files (PDF, docx, xlsx) use parse.",
 		"inputSchema": obj{
 			"type": "object",
 			"properties": obj{
@@ -237,6 +238,18 @@ var mcpTools = []obj{
 			"properties": obj{
 				"url":      obj{"type": "string", "description": "Start URL to crawl"},
 				"provider": obj{"type": "string", "description": "Override provider; defaults to the configured one (firecrawl)"},
+			},
+			"required": []string{"url"},
+		},
+	},
+	{
+		"name":        "parse",
+		"description": "Parse a document URL (PDF, docx/doc/odt/rtf, xlsx/xls) into markdown, with automatic provider failover. PDFs work on every parse provider; Office files need firecrawl.",
+		"inputSchema": obj{
+			"type": "object",
+			"properties": obj{
+				"url":      obj{"type": "string", "description": "Document URL"},
+				"provider": obj{"type": "string", "description": "Override provider; defaults to the configured one (auto)"},
 			},
 			"required": []string{"url"},
 		},
@@ -341,6 +354,20 @@ func callTool(ctx context.Context, name string, args json.RawMessage) (string, e
 			return "", err
 		}
 		return jsonString(result), nil
+
+	case "parse":
+		var a parseRequest
+		if err := json.Unmarshal(args, &a); err != nil {
+			return "", fmt.Errorf("invalid arguments: %w", err)
+		}
+		if a.URL == "" {
+			return "", fmt.Errorf("url is required")
+		}
+		result, err := opParse(ctx, a.Provider, a.URL)
+		if err != nil {
+			return "", err
+		}
+		return result.Content, nil
 
 	case "transcribe":
 		var a transcribeRequest

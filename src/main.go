@@ -133,6 +133,7 @@ func main() {
 	factory.SetAutoChain("search", autoCandidates("search", cfg.Priority))
 	factory.SetAutoChain("fetch", autoCandidates("fetch", cfg.Priority))
 	factory.SetAutoChain("transcribe", autoCandidates("transcribe", cfg.Priority))
+	factory.SetAutoChain("parse", autoCandidates("parse", cfg.Priority))
 
 	store, err := setupCache()
 	if err != nil {
@@ -152,7 +153,7 @@ func main() {
 		Name:        "seek",
 		Version:     version,
 		Usage:       "The OpenRouter for web search",
-		Description: "Run web search, fetch, crawl, and transcribe across pluggable providers.\n\nDocs: " + readmeURL,
+		Description: "Run web search, fetch, crawl, parse, and transcribe across pluggable providers.\n\nDocs: " + readmeURL,
 		Flags:       []cli.Flag{verboseFlag},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			if cmd.Bool("verbose") {
@@ -164,6 +165,7 @@ func main() {
 			searchCmd(),
 			fetchCmd(),
 			crawlCmd(),
+			parseCmd(),
 			transcribeCmd(),
 			agentCmd(),
 			serveCmd(),
@@ -240,6 +242,8 @@ func capabilityProviders(op string) []string {
 		return crawlProviders
 	case "transcribe":
 		return transcribeProviders
+	case "parse":
+		return parseProviders
 	}
 	return nil
 }
@@ -428,6 +432,28 @@ func crawlCmd() *cli.Command {
 				return err
 			}
 			return render(cmd, result)
+		},
+	}
+}
+
+func parseCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "parse",
+		Usage:     "Parse a document URL (PDF, docx, xlsx, ...) to markdown",
+		UsageText: "seek parse [-p provider] <url>",
+		Flags: []cli.Flag{
+			providerFlag(providerUsage(provider.CapParse, true)),
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.NArg() < 1 {
+				return fmt.Errorf("url required")
+			}
+			result, err := opParse(ctx, cmd.String("provider"), cmd.Args().First())
+			if err != nil {
+				return err
+			}
+			fmt.Println(result.Content)
+			return nil
 		},
 	}
 }
