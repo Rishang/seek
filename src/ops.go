@@ -7,6 +7,7 @@ import (
 
 	"github.com/rishang/seek/config"
 	"github.com/rishang/seek/logx"
+	"github.com/rishang/seek/provider"
 )
 
 // This file holds the provider-operation runners shared by the CLI commands,
@@ -24,9 +25,12 @@ func opSearch(ctx context.Context, providerName, query string, opts config.Searc
 	if providerName == "" {
 		providerName = cfg.Search.Provider
 	}
-	logx.Debug("op: search provider=%s query=%q range=%s", providerName, query, fmtRange(opts.TimeRange))
+	logx.Debug("op: search provider=%s query=%q kind=%s range=%s", providerName, query, opts.Kind, fmtRange(opts.TimeRange))
 	sp, err := factory.Search(providerName)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkKind(sp, providerName, opts.Kind); err != nil {
 		return nil, err
 	}
 	results, err := sp.Search(ctx, query, opts)
@@ -37,6 +41,31 @@ func opSearch(ctx context.Context, providerName, query string, opts config.Searc
 	}
 	logx.Debug("op: search ok, %d result(s)", len(results))
 	return results, nil
+}
+
+// checkKind fails fast when sp cannot run a news/images search. Unlike an
+// unsupported time range this is an error, not a warning: falling back to a web
+// search would return a different kind of result.
+func checkKind(sp provider.SearchProvider, name, kind string) error {
+	if provider.SupportsKind(sp, kind) {
+		return nil
+	}
+	if name == "auto" {
+		return fmt.Errorf("no configured provider supports %s search", kind)
+	}
+	return fmt.Errorf("provider %q does not support %s search", name, kind)
+}
+
+// parseKind validates a search kind from a request body ("" or "web" mean a
+// regular web search).
+func parseKind(s string) (string, error) {
+	switch s {
+	case "", "web":
+		return config.KindWeb, nil
+	case config.KindNews, config.KindImages:
+		return s, nil
+	}
+	return "", fmt.Errorf("invalid kind %q: expected web, news, or images", s)
 }
 
 // opFetch runs a fetch. An empty providerName uses the configured default;

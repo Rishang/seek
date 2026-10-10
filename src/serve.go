@@ -32,7 +32,7 @@ func serveCmd() *cli.Command {
 		UsageText: "seek serve [--addr host:port] [--token TOKEN]",
 		Description: "Expose search, fetch, crawl, parse, transcribe, and agent over HTTP as JSON. Listens on\n" +
 			"127.0.0.1:8787 by default.\n\n" +
-			"  POST /search  {\"query\":\"...\",\"provider\":\"auto\",\"range\":7}\n" +
+			"  POST /search  {\"query\":\"...\",\"provider\":\"auto\",\"range\":7,\"kind\":\"news\"}\n" +
 			"  POST /fetch  {\"url\":\"https://...\",\"format\":\"markdown\"}\n" +
 			"  POST /crawl   {\"url\":\"https://...\"}\n" +
 			"  POST /parse   {\"url\":\"https://.../doc.pdf\"}\n" +
@@ -183,6 +183,7 @@ type searchRequest struct {
 	Range    int    `json:"range,omitempty"`
 	Start    string `json:"start,omitempty"` // DD/MM/YYYY
 	End      string `json:"end,omitempty"`   // DD/MM/YYYY
+	Kind     string `json:"kind,omitempty"`  // web (default) | news | images
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +200,12 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	results, err := opSearch(r.Context(), req.Provider, req.Query, config.SearchOptions{TimeRange: tr})
+	kind, err := parseKind(req.Kind)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	results, err := opSearch(r.Context(), req.Provider, req.Query, config.SearchOptions{TimeRange: tr, Kind: kind})
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return

@@ -39,6 +39,7 @@ type exaText struct {
 type exaSearchRequest struct {
 	Query              string       `json:"query"`
 	Type               string       `json:"type,omitempty"`
+	Category           string       `json:"category,omitempty"` // e.g. "news"
 	NumResults         int          `json:"numResults,omitempty"`
 	StartPublishedDate string       `json:"startPublishedDate,omitempty"` // ISO 8601
 	EndPublishedDate   string       `json:"endPublishedDate,omitempty"`   // ISO 8601
@@ -71,10 +72,14 @@ type exaContentsResponse struct {
 
 func (p *ExaProvider) SupportsTimeRange() bool { return true }
 
+// SupportsKind: exa has a news category but no image search.
+func (p *ExaProvider) SupportsKind(kind string) bool { return kind == config.KindNews }
+
 func (p *ExaProvider) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	body := exaSearchRequest{
 		Query:              query,
 		Type:               "auto",
+		Category:           opts.Kind, // "" for web, "news" for news
 		NumResults:         10,
 		StartPublishedDate: iso8601(opts.TimeRange.Start),
 		EndPublishedDate:   iso8601(opts.TimeRange.End),
@@ -130,5 +135,6 @@ func (p *ExaProvider) Fetch(ctx context.Context, url string, opts config.FetchOp
 // Compile-time interface checks.
 var (
 	_ SearchProvider = (*ExaProvider)(nil)
+	_ KindSearcher   = (*ExaProvider)(nil)
 	_ FetchProvider  = (*ExaProvider)(nil)
 )

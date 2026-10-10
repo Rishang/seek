@@ -7,7 +7,7 @@ small JSON HTTP API, backed by the shared provider factory and `auto` failover.
 
 | Method | Path            | Auth | Body / notes |
 |--------|-----------------|------|--------------|
-| POST   | `/search`       | yes  | `{"query","provider?","range?","start?","end?"}` → `{"results":[...]}` |
+| POST   | `/search`       | yes  | `{"query","provider?","range?","start?","end?","kind?"}` → `{"results":[...]}` (`kind`: `web`\|`news`\|`images`) |
 | POST   | `/fetch`       | yes  | `{"url","provider?","format?"}` → `FetchResult` |
 | POST   | `/crawl`        | yes  | `{"url","provider?"}` → `CrawlResult` |
 | POST   | `/parse`        | yes  | `{"url","provider?"}` → `FetchResult` (`content` = document markdown) |

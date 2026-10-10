@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/rishang/seek/config"
@@ -26,6 +27,7 @@ type tvSearchRequest struct {
 	IncludeAnswer     string   `json:"include_answer,omitempty"` // "basic" | "advanced"
 	IncludeRawContent bool     `json:"include_raw_content,omitempty"`
 	IncludeImages     bool     `json:"include_images,omitempty"`
+	IncludeImageDesc  bool     `json:"include_image_descriptions,omitempty"`
 	MaxResults        int      `json:"max_results,omitempty"`
 	IncludeDomains    []string `json:"include_domains,omitempty"`
 	ExcludeDomains    []string `json:"exclude_domains,omitempty"`
@@ -35,11 +37,11 @@ type tvSearchRequest struct {
 }
 
 type tvSearchResponse struct {
-	Query        string        `json:"query"`
-	Answer       string        `json:"answer"`
-	Results      []tvResult    `json:"results"`
-	Images       []interface{} `json:"images"`
-	ResponseTime float64       `json:"response_time"`
+	Query        string     `json:"query"`
+	Answer       string     `json:"answer"`
+	Results      []tvResult `json:"results"`
+	Images       []tvImage  `json:"images"`
+	ResponseTime float64    `json:"response_time"`
 }
 
 type tvResult struct {
@@ -49,6 +51,21 @@ type tvResult struct {
 	Score         float64 `json:"score"`
 	RawContent    *string `json:"raw_content"`
 	PublishedDate string  `json:"published_date"` // populated for news results
+}
+
+// tvImage is a top-level search image. Tavily returns bare URL strings, or
+// {url, description} objects when include_image_descriptions is set; accept both.
+type tvImage struct {
+	URL         string `json:"url"`
+	Description string `json:"description"`
+}
+
+func (i *tvImage) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		return json.Unmarshal(b, &i.URL)
+	}
+	type plain tvImage // drop the method to avoid recursion
+	return json.Unmarshal(b, (*plain)(i))
 }
 
 type tvExtractRequest struct {
@@ -104,6 +121,13 @@ type tvCrawlResult struct {
 
 func (p *TavilyProvider) SupportsTimeRange() bool { return true }
 
+func (p *TavilyProvider) SupportsKind(kind string) bool {
+	return kind == config.KindNews || kind == config.KindImages
+}
+
+// tavilyBase is a var so tests can point it at a local server.
+var tavilyBase = "https://api.tavily.com"
+
 func (p *TavilyProvider) Search(ctx context.Context, query string, opts config.SearchOptions) ([]config.SearchResult, error) {
 	body := tvSearchRequest{
 		Query:       query,
@@ -112,10 +136,26 @@ func (p *TavilyProvider) Search(ctx context.Context, query string, opts config.S
 		StartDate:   ymd(opts.TimeRange.Start),
 		EndDate:     ymd(opts.TimeRange.End),
 	}
+	switch opts.Kind {
+	case config.KindNews:
+		body.Topic = "news"
+	case config.KindImages:
+		body.IncludeImages, body.IncludeImageDesc = true, true
+	}
 
 	var resp tvSearchResponse
-	if err := p.post(ctx, "search", "https://api.tavily.com/search", &body, &resp); err != nil {
+	if err := p.post(ctx, "search", tavilyBase+"/search", &body, &resp); err != nil {
 		return nil, err
+	}
+
+	// Images come back as a query-level list without a source page, so URL
+	// and ImageURL are both the image.
+	if opts.Kind == config.KindImages {
+		results := make([]config.SearchResult, len(resp.Images))
+		for i, img := range resp.Images {
+			results[i] = config.SearchResult{Title: img.Description, URL: img.URL, ImageURL: img.URL}
+		}
+		return results, nil
 	}
 
 	results := make([]config.SearchResult, len(resp.Results))
@@ -209,6 +249,7 @@ func (p *TavilyProvider) Crawl(ctx context.Context, url string) (*config.CrawlRe
 
 var (
 	_ SearchProvider     = (*TavilyProvider)(nil)
+	_ KindSearcher       = (*TavilyProvider)(nil)
 	_ FetchProvider      = (*TavilyProvider)(nil)
 	_ CrawlProvider      = (*TavilyProvider)(nil)
 	_ TranscribeProvider = (*TavilyProvider)(nil)

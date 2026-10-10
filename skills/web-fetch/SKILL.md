@@ -4,11 +4,11 @@ description: Search the web and fetch full page content via seek (firecrawl/tavi
 ---
 # Web Fetch — `seek`
 ```bash
-seek search -o csv "<query>"   # ranked results as CSV: title,url,snippet,published_date
+seek search -o csv "<query>"   # ranked results as CSV: title,url,snippet,published_date,image_url
 seek fetch "<url>"             # one page → full markdown on stdout
 # seek crawl  — multi-page, OFF by default (see guard below)
 ```
-`seek search -o csv` returns rows of `title,url,snippet,published_date`. The **snippet is substantial** — often several sentences summarizing the page, not a teaser. For many lookups it already *is* the answer. `seek fetch` returns the full page as markdown (default format), including nav/footer boilerplate.
+`seek search -o csv` returns rows of `title,url,snippet,published_date,image_url`. The **snippet is substantial** — often several sentences summarizing the page, not a teaser. For many lookups it already *is* the answer. `seek fetch` returns the full page as markdown (default format), including nav/footer boilerplate.
 
 ## The loop: search → decide → maybe fetch → stop
 1. **Search.** `seek search -o csv "<query>"` → read the snippets + URLs.
@@ -39,7 +39,7 @@ seek fetch "<url>"             # one page → full markdown on stdout
 - raw.githubusercontent.com
 
 ## Flags worth knowing but not often used(rarely required)
-- `seek search -o csv` — CSV instead of JSON (compact; columns `title,url,snippet,published_date`). Prefer it.
+- `seek search -o csv` — CSV instead of JSON (compact; columns `title,url,snippet,published_date,image_url`). Prefer it.
 - `-p firecrawl|tavily|spider.cloud|brave` (search) / `-p firecrawl|tavily|spider.cloud|webcrawlerapi|lightpanda` (fetch) — pin a provider.
 - `seek parse "<url>"` — document URLs (`.pdf`, `.docx`, `.xlsx`) → markdown. Use it instead of `fetch` for files.
 - `--no-cache` — bypass the result cache for one call.

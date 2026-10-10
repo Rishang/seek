@@ -18,6 +18,22 @@ type TimeRangeSearcher interface {
 	SupportsTimeRange() bool
 }
 
+// KindSearcher is implemented by search providers that can run non-web
+// searches (SearchOptions.Kind = "news" | "images"). Web search is always
+// supported, so providers without it only serve plain web searches.
+type KindSearcher interface {
+	SupportsKind(kind string) bool
+}
+
+// SupportsKind reports whether sp can run a search of the given kind.
+func SupportsKind(sp SearchProvider, kind string) bool {
+	if kind == config.KindWeb {
+		return true
+	}
+	ks, ok := sp.(KindSearcher)
+	return ok && ks.SupportsKind(kind)
+}
+
 // FetchProvider extracts content from a single URL.
 type FetchProvider interface {
 	Fetch(ctx context.Context, url string, opts config.FetchOptions) (*config.FetchResult, error)

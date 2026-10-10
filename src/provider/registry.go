@@ -117,3 +117,15 @@ func HostDefault(name string) string {
 	}
 	return ""
 }
+
+// NamesForKind returns the search providers that can run a news/images search,
+// in canonical order. Probed like Caps, so help text never drifts from code.
+func NamesForKind(kind string) []string {
+	var out []string
+	for _, r := range registry {
+		if sp, ok := r.new(config.ProviderConfig{}).(SearchProvider); ok && SupportsKind(sp, kind) {
+			out = append(out, r.name)
+		}
+	}
+	return out
+}

@@ -243,9 +243,17 @@ type TimeRange struct {
 // IsZero reports whether no time bound is set.
 func (t TimeRange) IsZero() bool { return t.Start.IsZero() && t.End.IsZero() }
 
+// Search kinds. The zero value is a regular web search.
+const (
+	KindWeb    = ""
+	KindNews   = "news"
+	KindImages = "images"
+)
+
 // SearchOptions carries optional parameters for a search request.
 type SearchOptions struct {
 	TimeRange TimeRange
+	Kind      string // KindWeb, KindNews, or KindImages
 }
 
 // SearchResult represents a single result from a search provider.
@@ -254,6 +262,7 @@ type SearchResult struct {
 	URL           string `json:"url"`
 	Snippet       string `json:"snippet"`
 	PublishedDate string `json:"published_date,omitempty"`
+	ImageURL      string `json:"image_url,omitempty"` // image searches: the image itself; URL is its source page
 }
 
 // FetchResult holds the result of a fetch request.

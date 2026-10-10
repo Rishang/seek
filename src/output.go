@@ -40,9 +40,9 @@ func renderTo(w io.Writer, format string, v any) error {
 
 	switch r := v.(type) {
 	case []config.SearchResult:
-		cw.Write([]string{"title", "url", "snippet", "published_date"})
+		cw.Write([]string{"title", "url", "snippet", "published_date", "image_url"})
 		for _, item := range r {
-			cw.Write([]string{item.Title, item.URL, item.Snippet, item.PublishedDate})
+			cw.Write([]string{item.Title, item.URL, item.Snippet, item.PublishedDate, item.ImageURL})
 		}
 	case *config.CrawlResult:
 		cw.Write([]string{"url", "pages", "content"})

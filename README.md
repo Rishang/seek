@@ -126,7 +126,7 @@ description: Search the web and fetch full page content via seek
 
 ```
 seek search -o csv "<query>"
-# output: title,url,snippet,published_date  (one row per result)
+# output: title,url,snippet,published_date,image_url  (one row per result)
 ```
 
 The snippet is substantial — often several sentences, not a teaser. **For many lookups the snippet already is the answer.**
@@ -418,6 +418,11 @@ curl -s localhost:8787/search \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"query": "latest golang release notes"}'
 
+# news or images: add "kind"; image results carry image_url
+curl -s localhost:8787/search \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query": "golang release", "kind": "news", "range": 7}'
+
 curl -s localhost:8787/fetch \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"url": "https://go.dev/doc/devel/release", "format": "markdown"}'
@@ -481,6 +486,8 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 | Operation | Default `auto` order |
 |---|---|
 | search | tavily → exa → firecrawl → spider.cloud → brave → perplexity |
+| search `--news` | tavily → exa → firecrawl → brave |
+| search `--images` | tavily → firecrawl → brave |
 | fetch | tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata |
 | parse | tavily → firecrawl → supadata |
 | transcribe | tavily → firecrawl → supadata |
@@ -535,7 +542,7 @@ Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tav
 
 | Command | What it does |
 |---|---|
-| `seek search <query>` | Web search with auto-failover across providers |
+| `seek search <query>` | Web, news (`--news`), or image (`--images`) search with auto-failover across providers |
 | `seek fetch <url>` | Fetch a page as markdown, html, or json |
 | `seek crawl <url>` | Crawl a site and return its pages |
 | `seek parse <url>` | Document URL (PDF, docx, xlsx, …) → markdown — see [Parse](#-parse) |
@@ -553,7 +560,7 @@ Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tav
 
 | Command | Flags |
 |---|---|
-| `search` | `-p/--provider`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
+| `search` | `-p/--provider`, `--news`, `--images`, `--start DD/MM/YYYY`, `--end DD/MM/YYYY`, `--range N`, `-o json\|csv`, `--no-cache` |
 | `fetch` | `-p/--provider`, `-f/--format markdown\|html\|json`, `--no-cache` |
 | `crawl` | `-p/--provider`, `-o json\|csv`, `--no-cache` |
 | `parse` | `-p/--provider` |
