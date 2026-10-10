@@ -566,7 +566,7 @@ Quote the URL — `?` in YouTube links is a glob in zsh. In the `auto` chain tav
 | `seek map <url>` | List a site's URLs without scraping them — see [Map](#️-map) |
 | `seek parse <url>` | Document URL (PDF, docx, xlsx, …) → markdown — see [Parse](#-parse) |
 | `seek transcribe <url>` | Transcript of a video URL (YouTube, TikTok, X, media files, …) — see [Transcribe](#-transcribe) |
-| `seek agent <question>` | Fast cited answer: one search, then answers from the snippets or reads a few results. Also the `agent` MCP tool and `POST /agent`. `--deep` runs multi-turn research with seek's search/fetch as tools; fetched pages are distilled into deduped facts by a small model ([notes](notes/agent.md)) |
+| `seek agent <question>` | Fast cited answer: one search, then answers from the snippets or reads a few results. Also the `agent` MCP tool and `POST /agent`. `--deep` researches a checklist of the question's parts across several pages: a small model extracts facts that must quote their page, duplicates merge, uncovered parts get one more round, and the model answers once from the facts ([notes](notes/agent.md)) |
 | `seek mcp` | Start MCP server over stdio (JSON-RPC 2.0) |
 | `seek serve` | Start HTTP API (`/search`, `/fetch`, `/crawl`, `/map`, `/parse`, `/transcribe`, `/agent`) |
 | `seek config init` | Configure providers and API keys (interactive or `--yes` for scripting) |
@@ -638,10 +638,10 @@ agent:
   base_url: https://api.openai.com/v1   # any OpenAI-compatible endpoint
   api_key: sk-...                       # or SEEK_AGENT_API_KEY
   model: gpt-5                          # synthesis
-  extract_model: gpt-5-nano             # --deep page extraction (defaults to model)
+  extract_model: gpt-5-nano             # query splits, --deep checklist and extraction (defaults to model)
   reasoning_effort: medium              # optional; sent with model's requests only
   sources: 5                            # search results the shallow mode answers from
-  max_steps: 12                         # --deep turn cap
+  max_steps: 2                          # --deep read rounds
 ```
 
 Non-interactive setup (great for CI or dotfiles):

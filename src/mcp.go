@@ -287,7 +287,7 @@ var mcpTools = []obj{
 			"type": "object",
 			"properties": obj{
 				"question":         obj{"type": "string", "description": "The question to answer"},
-				"deep":             obj{"type": "boolean", "description": "Deep research: several search/fetch turns (slower)"},
+				"deep":             obj{"type": "boolean", "description": "Deep research: checklist of the question's parts, facts extracted and verified across several pages (slower)"},
 				"reasoning_effort": obj{"type": "string", "description": "Override reasoning effort, e.g. low, medium, high"},
 			},
 			"required": []string{"question"},

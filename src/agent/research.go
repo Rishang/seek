@@ -5,226 +5,394 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/rishang/seek/config"
 )
 
-const researchPrompt = `You are a deep-research agent. Answer the user's question by investigating the web with your tools.
-- search(query): returns result titles, URLs and snippets. Search several angles, follow leads, refine queries.
-- fetch(url, focus): reads a page and returns the facts relevant to focus, labelled with a source id [n].
-Plan, gather from multiple independent sources, cross-check claims that conflict, and stop once the question is well covered.
-Then reply without calling tools: one concise, information-dense markdown answer citing [n] after each statement.
-Cite only ids returned by fetch. Do not add a sources list and do not invent facts.`
+// Deep research is a fixed pipeline driven by code, not a tool-calling loop:
+// the models plan, extract and write, but never decide when to search or
+// stop. Every search and read is justified (a gap round runs only for
+// checklist parts no fact covers yet), and the answer model sees only facts
+// verified against their pages.
+//
+//	plan    extract model → checklist of parts, each with a search query
+//	search  the question and every part's query, in parallel
+//	read    best pages per part → extract model → facts with a verbatim quote
+//	verify  drop facts whose quote or numbers aren't on the page
+//	cover   a part is covered once a kept fact answers it; uncovered parts get
+//	        a gap round (search the part's need, read its next best pages)
+//	answer  the model writes once, without tools, from the merged facts
 
-const finalNudge = "Step budget reached. Answer now from the facts gathered so far, without calling tools."
+const deepPlanPrompt = `Break a web research question into the parts a complete answer must cover: 1 part for a narrow question, up to 5 for a broad or multi-part one.
+For each part give "need", what must be found, as a short question, and "query", a focused keyword web search for it. Keep names and versions exactly as written.
+Return JSON: {"parts":[{"need":"...","query":"..."}]}.`
 
-// researchTools are the seek wrappers exposed to the model.
-var researchTools = []Tool{
-	{Type: "function", Function: ToolFunction{
-		Name:        "search",
-		Description: "Web search. Returns up to 10 results with title, URL and snippet.",
-		Parameters: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{"query": map[string]any{"type": "string", "description": "Search query"}},
-			"required":   []string{"query"},
-		},
-	}},
-	{Type: "function", Function: ToolFunction{
-		Name:        "fetch",
-		Description: "Read a web page. Returns the facts relevant to focus, extracted from the page, labelled with a citable source id.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"url":   map[string]any{"type": "string", "description": "Page URL"},
-				"focus": map[string]any{"type": "string", "description": "What to look for on the page; defaults to the research question"},
-			},
-			"required": []string{"url"},
-		},
-	}},
+const synthPrompt = `You answer a research question using only the facts given. Each fact ends with the ids of the sources that state it, e.g. [2][5].
+- Lead with a direct answer, then cover every checklist part that has facts. Merge facts that say the same thing; never repeat one.
+- Be concrete: keep names, versions, dates and numbers exactly as the facts state them. Skip filler. Use short headings or bullets.
+- Cite after each statement with the ids of the facts you used, e.g. [2] or [1][3].
+- Use nothing beyond the facts: no background knowledge and no guessed versions, dates, names or code. For each checklist part marked "not found", say in one line that the sources did not cover it.
+Do not add a sources list.`
+
+const (
+	deepMaxParts   = 5                // checklist parts kept from the plan
+	deepFirstReads = 6                // pages read in the first round
+	deepGapReads   = 2                // pages read per uncovered part in a gap round
+	deepHostReads  = 2                // pages read per host per run
+	deepMaxFacts   = 60               // facts shown to the answer model
+	deepPlanTTL    = 15 * time.Second // past it the question is its own single part
+	deepFetchTTL   = 20 * time.Second // per-page fetch timeout; a slow page is skipped
+)
+
+// part is one checklist item: what a complete answer must cover and the
+// search query for it.
+type part struct {
+	Need  string `json:"need"`
+	Query string `json:"query"`
+
+	hits       []config.SearchResult // ranked; unread ones feed gap rounds
+	researched bool                  // its need was searched in a gap round
+	covered    bool
 }
 
-// research is the state shared by concurrent tool calls within one run.
+// research is one run's state. Rounds read pages in parallel, but all state
+// changes happen between rounds, so it needs no lock.
 type research struct {
 	d        Deps
 	opts     Options
 	question string
+	parts    []*part
+	qHits    []config.SearchResult // the question's own search, ranked
+	weights  map[string]float64    // term weights for page excerpts
 
-	mu        sync.Mutex
-	sources   []Source
-	byURL     map[string]int    // url -> index into sources/perSource
-	titles    map[string]string // url -> title seen in search results
+	sources   []Source // pages that yielded facts, numbered from 1
 	perSource [][]extracted
+	read      map[string]bool // URLs picked so far
+	hosts     map[string]int  // pages picked per host
 	skipped   []Skip
 }
 
-// Research answers question with a tool-calling loop: the model decides what
-// to search and fetch, fetched pages are distilled by the extract model before
-// the research model sees them, and the loop ends when the model answers or
-// MaxSteps is reached (then it is asked to answer from what it has).
+// Research answers question with the deep pipeline above. It stops reading
+// when every part is covered, after MaxRounds rounds, or when a gap round
+// covers nothing new, then makes one tool-free call to the model.
 func Research(ctx context.Context, d Deps, opts Options, question string) (*Result, error) {
 	opts.defaults()
-	r := &research{d: d, opts: opts, question: question, byURL: map[string]int{}, titles: map[string]string{}}
-	msgs := []Message{{Role: "system", Content: researchPrompt + "\n" + today()}, {Role: "user", Content: question}}
-
-	for step := 1; ; step++ {
-		req := Request{Model: opts.Model, Messages: msgs, Tools: researchTools, ReasoningEffort: opts.ReasoningEffort}
-		if step > opts.MaxSteps {
-			req.Tools = nil
-			req.Messages = append(msgs, Message{Role: "user", Content: finalNudge})
-		}
-		d.trace("agent: step %d → %s (%d message(s), tools=%t)", step, opts.Model, len(req.Messages), req.Tools != nil)
-		msg, err := d.Complete(ctx, req)
-		if err != nil {
-			return r.result(""), fmt.Errorf("agent research step %d: %w", step, err)
-		}
-		d.trace("agent: step %d ← %d tool call(s), %d chars of text", step, len(msg.ToolCalls), len(msg.Content))
-		if len(msg.ToolCalls) == 0 || req.Tools == nil {
-			d.trace("agent: answered after %d step(s)", step)
-			res := r.result(cleanAnswer(msg.Content))
-			if res.Answer == "" {
-				return res, errors.New("agent: model returned an empty answer")
-			}
-			return res, nil
-		}
-		msgs = append(msgs, msg)
-		msgs = append(msgs, r.runTools(ctx, step, msg.ToolCalls)...)
+	r := &research{d: d, opts: opts, question: question, read: map[string]bool{}, hosts: map[string]int{}}
+	if err := r.plan(ctx); err != nil {
+		return nil, fmt.Errorf("agent search: %w", err)
 	}
+	for round := 1; round <= opts.MaxRounds; round++ {
+		gaps := r.cover()
+		if len(gaps) == 0 {
+			break
+		}
+		var picks []Source
+		if round == 1 {
+			picks = r.pickFirst()
+		} else {
+			picks = r.pickGaps(ctx, gaps)
+		}
+		if len(picks) == 0 {
+			d.trace("agent: round %d: no unread pages left", round)
+			break
+		}
+		r.readPages(ctx, picks)
+		left := r.cover()
+		d.trace("agent: round %d: read %d page(s), %d/%d part(s) covered", round, len(picks), len(r.parts)-len(left), len(r.parts))
+		if round > 1 && len(left) == len(gaps) {
+			d.trace("agent: round %d covered nothing new, stopping", round)
+			break
+		}
+	}
+
+	facts := merge(r.sources, r.perSource)
+	facts = facts[:min(len(facts), deepMaxFacts)]
+	res := &Result{Facts: facts, Sources: r.sources, Skipped: r.skipped}
+	if len(facts) == 0 {
+		return res, errors.New("agent: no relevant facts found in the pages read")
+	}
+	d.trace("agent: answering from %d fact(s) across %d source(s)", len(facts), len(r.sources))
+	msg, err := d.Complete(ctx, Request{
+		Model:           opts.Model,
+		ReasoningEffort: opts.ReasoningEffort,
+		Messages:        []Message{{Role: "system", Content: synthPrompt + "\n" + today()}, {Role: "user", Content: r.brief(facts)}},
+	})
+	if err != nil {
+		return res, fmt.Errorf("agent answer: %w", err)
+	}
+	res.Answer = knownCites(cleanAnswer(msg.Content), len(r.sources))
+	if res.Answer == "" {
+		return res, errors.New("agent: model returned an empty answer")
+	}
+	return res, nil
 }
 
-// runTools executes one turn's tool calls in parallel, returning the tool
-// messages in call order. Tool errors go back to the model as text so it can
-// adapt; they never end the run.
-func (r *research) runTools(ctx context.Context, step int, calls []ToolCall) []Message {
-	out := make([]Message, len(calls))
+// plan asks the extract model for the checklist while the question itself is
+// searched, then searches every part's query in parallel. A failed or empty
+// plan makes the question its own single part. It fails only if every search
+// fails.
+func (r *research) plan(ctx context.Context) error {
+	var qErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.qHits, qErr = r.d.Search(ctx, r.question)
+		r.d.trace("agent: search %q → %d hit(s)", r.question, len(r.qHits))
+	}()
+
+	pctx, cancel := context.WithTimeout(ctx, deepPlanTTL)
+	parts, err := planParts(pctx, r.d, r.opts.ExtractModel, r.question)
+	cancel()
+	if err != nil {
+		r.d.trace("agent: plan failed, researching the question as one part: %v", err)
+	}
+	if len(parts) == 0 {
+		parts = []*part{{Need: r.question, Query: r.question}}
+	}
+	r.parts = parts
+
+	errs := make([]error, len(parts))
 	var wg sync.WaitGroup
-	for i, c := range calls {
+	for i, p := range parts {
+		if strings.EqualFold(p.Query, r.question) {
+			continue // the question's own search covers it
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r.d.trace("agent: step %d %s %s", step, c.Function.Name, c.Function.Arguments)
-			content, err := r.call(ctx, c)
-			if err != nil {
-				r.d.trace("agent: step %d %s failed: %v", step, c.Function.Name, err)
-				content = "error: " + err.Error()
-			} else {
-				r.d.trace("agent: step %d %s → %d chars to model", step, c.Function.Name, len(content))
-			}
-			out[i] = Message{Role: "tool", ToolCallID: c.ID, Content: content}
+			p.hits, errs[i] = r.d.Search(ctx, p.Query)
+			r.d.trace("agent: search %q → %d hit(s)", p.Query, len(p.hits))
 		}()
 	}
 	wg.Wait()
-	return out
+	<-done
+
+	all := append([]config.SearchResult(nil), r.qHits...)
+	ok := qErr == nil
+	for i, p := range parts {
+		switch {
+		case strings.EqualFold(p.Query, r.question):
+			p.hits = r.qHits
+		case errs[i] != nil:
+			r.d.trace("agent: search %q failed: %v", p.Query, errs[i])
+		default:
+			ok = true
+			all = append(all, p.hits...)
+		}
+		p.hits = rankHits(p.Query, p.hits)
+	}
+	if !ok {
+		return qErr
+	}
+	r.qHits = rankHits(r.question, r.qHits)
+	var needs []string
+	for _, p := range parts {
+		needs = append(needs, p.Need, p.Query)
+	}
+	r.weights = focusWeights(termWeights(queryTerms(r.question), all), strings.Join(needs, " "))
+	return nil
 }
 
-func (r *research) call(ctx context.Context, c ToolCall) (string, error) {
-	var args struct {
-		Query string `json:"query"`
-		URL   string `json:"url"`
-		Focus string `json:"focus"`
-	}
-	if err := json.Unmarshal([]byte(c.Function.Arguments), &args); err != nil {
-		return "", fmt.Errorf("invalid arguments: %w", err)
-	}
-	switch c.Function.Name {
-	case "search":
-		if args.Query == "" {
-			return "", errors.New("query is required")
-		}
-		return r.search(ctx, args.Query)
-	case "fetch":
-		if args.URL == "" {
-			return "", errors.New("url is required")
-		}
-		return r.fetch(ctx, args.URL, args.Focus)
-	}
-	return "", fmt.Errorf("unknown tool %q", c.Function.Name)
-}
-
-func (r *research) search(ctx context.Context, query string) (string, error) {
-	hits, err := r.d.Search(ctx, query)
+// planParts asks the extract model for the checklist parts.
+func planParts(ctx context.Context, d Deps, model, question string) ([]*part, error) {
+	msg, err := d.Complete(ctx, Request{
+		Model:          model,
+		Messages:       []Message{{Role: "system", Content: deepPlanPrompt}, {Role: "user", Content: question}},
+		ResponseFormat: &ResponseFormat{Type: "json_object"},
+	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	r.d.trace("agent: search %q → %d hit(s)", query, len(hits))
-	if len(hits) == 0 {
-		return "no results", nil
+	var p struct {
+		Parts []*part `json:"parts"`
 	}
-	r.mu.Lock()
-	for _, h := range hits {
-		if h.Title != "" {
-			r.titles[h.URL] = h.Title
+	if err := json.Unmarshal([]byte(stripFence(msg.Content)), &p); err != nil {
+		return nil, fmt.Errorf("invalid JSON from model: %w", err)
+	}
+	var out []*part
+	for _, x := range p.Parts {
+		if x == nil {
+			continue
+		}
+		x.Need, x.Query = strings.TrimSpace(x.Need), strings.TrimSpace(x.Query)
+		if x.Query == "" {
+			x.Query = x.Need
+		}
+		if x.Need != "" && len(out) < deepMaxParts {
+			out = append(out, x)
+			d.trace("agent: part %d: %s (search %q)", len(out), x.Need, x.Query)
 		}
 	}
-	r.mu.Unlock()
-	var b strings.Builder
-	for i, h := range hits[:min(len(hits), 10)] {
-		fmt.Fprintf(&b, "%d. %s\n   %s\n", i+1, h.Title, h.URL)
-		if h.Snippet != "" {
-			fmt.Fprintf(&b, "   %s\n", h.Snippet)
+	return out, nil
+}
+
+// pickFirst takes the best unread pages round-robin across the question's and
+// every part's results, so each part gets a page before any gets a second.
+func (r *research) pickFirst() []Source {
+	lists := [][]config.SearchResult{r.qHits}
+	for _, p := range r.parts {
+		lists = append(lists, p.hits)
+	}
+	var picks []Source
+	for k := 0; len(picks) < deepFirstReads; k++ {
+		more := false
+		for _, l := range lists {
+			if k < len(l) && len(picks) < deepFirstReads {
+				more = true
+				picks = r.take(picks, l[k])
+			}
+		}
+		if !more {
+			break
 		}
 	}
-	return b.String(), nil
+	return picks
 }
 
-// fetch distills url through the extract model and records it as a source.
-// A URL is fetched once per run; repeats return the recorded facts.
-func (r *research) fetch(ctx context.Context, url, focus string) (string, error) {
-	r.mu.Lock()
-	if i, ok := r.byURL[url]; ok {
-		s, facts := r.sources[i], r.perSource[i]
-		r.mu.Unlock()
-		r.d.trace("agent: %s already fetched as [%d], reusing facts", url, s.ID)
-		return formatFacts(s, facts), nil
+// pickGaps searches each uncovered part's need once (its keyword query already
+// ran) and takes the part's next best unread pages.
+func (r *research) pickGaps(ctx context.Context, gaps []*part) []Source {
+	var wg sync.WaitGroup
+	for _, p := range gaps {
+		if p.researched {
+			continue
+		}
+		p.researched = true
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hits, err := r.d.Search(ctx, p.Need)
+			if err != nil {
+				r.d.trace("agent: search %q failed: %v", p.Need, err)
+				return
+			}
+			r.d.trace("agent: gap search %q → %d hit(s)", p.Need, len(hits))
+			p.hits = rankHits(p.Need, append(hits, p.hits...))
+		}()
 	}
-	r.mu.Unlock()
+	wg.Wait()
 
-	if focus == "" {
-		focus = r.question
+	var picks []Source
+	for _, p := range gaps {
+		taken := 0
+		for _, h := range p.hits {
+			if taken == deepGapReads {
+				break
+			}
+			next := r.take(picks, h)
+			if len(next) > len(picks) {
+				taken++
+			}
+			picks = next
+		}
 	}
-	facts, err := extract(ctx, r.d, r.opts.ExtractModel, focus, url)
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err != nil {
-		r.skipped = append(r.skipped, Skip{URL: url, Err: err.Error()})
-		return "", err
-	}
-	if i, ok := r.byURL[url]; ok { // a parallel call won the race
-		return formatFacts(r.sources[i], r.perSource[i]), nil
-	}
-	s := Source{ID: len(r.sources) + 1, Title: r.titles[url], URL: url}
-	r.byURL[url] = len(r.sources)
-	r.sources = append(r.sources, s)
-	r.perSource = append(r.perSource, facts)
-	r.d.trace("agent: recorded source [%d] %s", s.ID, url)
-	return formatFacts(s, facts), nil
+	return picks
 }
 
-// formatFacts renders one source's relevant facts for the research model.
-func formatFacts(s Source, facts []extracted) string {
+// take appends h as a page to read unless it was picked already, has no URL,
+// is a video or social page, or its host has used its read budget.
+func (r *research) take(picks []Source, h config.SearchResult) []Source {
+	host := hostOf(h.URL)
+	if h.URL == "" || r.read[h.URL] || lowValueHost(h.URL) || r.hosts[host] >= deepHostReads {
+		return picks
+	}
+	r.read[h.URL] = true
+	r.hosts[host]++
+	return append(picks, Source{Title: h.Title, URL: h.URL})
+}
+
+// readPages extracts facts from picks in parallel and numbers each page that
+// yielded facts as a source. Failed pages are recorded in skipped.
+func (r *research) readPages(ctx context.Context, picks []Source) {
+	facts := make([][]extracted, len(picks))
+	errs := make([]error, len(picks))
+	var wg sync.WaitGroup
+	for i, s := range picks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			facts[i], errs[i] = extract(ctx, r.d, r.opts.ExtractModel, r.question, r.parts, r.weights, s.URL)
+		}()
+	}
+	wg.Wait()
+	for i, s := range picks {
+		switch {
+		case errs[i] != nil:
+			r.d.trace("agent: skipped %s: %v", s.URL, errs[i])
+			r.skipped = append(r.skipped, Skip{URL: s.URL, Err: errs[i].Error()})
+		case len(facts[i]) > 0:
+			s.ID = len(r.sources) + 1
+			r.sources = append(r.sources, s)
+			r.perSource = append(r.perSource, facts[i])
+		}
+	}
+}
+
+// cover marks the parts some kept fact answers and returns the rest.
+func (r *research) cover() []*part {
+	for _, facts := range r.perSource {
+		for _, f := range facts {
+			for _, i := range f.Parts {
+				if i >= 1 && i <= len(r.parts) {
+					r.parts[i-1].covered = true
+				}
+			}
+		}
+	}
+	var gaps []*part
+	for _, p := range r.parts {
+		if !p.covered {
+			gaps = append(gaps, p)
+		}
+	}
+	return gaps
+}
+
+// brief is the answer model's input: the question, the checklist with what
+// was found, and the merged facts with their source ids.
+func (r *research) brief(facts []Fact) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Source [%d] %s\n", s.ID, s.URL)
-	n := 0
+	fmt.Fprintf(&b, "Question: %s\n\nChecklist:\n", r.question)
+	for i, p := range r.parts {
+		status := "covered"
+		if !p.covered {
+			status = "not found"
+		}
+		fmt.Fprintf(&b, "%d. %s (%s)\n", i+1, p.Need, status)
+	}
+	b.WriteString("\nFacts:\n")
 	for _, f := range facts {
-		if f.Relevance > 0 && strings.TrimSpace(f.Claim) != "" {
-			fmt.Fprintf(&b, "- %s\n", strings.TrimSpace(f.Claim))
-			n++
+		b.WriteString("- " + f.Claim + " ")
+		for _, id := range f.Sources {
+			fmt.Fprintf(&b, "[%d]", id)
 		}
-	}
-	if n == 0 {
-		b.WriteString("(no relevant facts on this page)\n")
+		b.WriteString("\n")
 	}
 	return b.String()
 }
 
-// result snapshots the gathered sources and merged facts.
-func (r *research) result(answer string) *Result {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return &Result{
-		Answer:  answer,
-		Facts:   merge(r.sources, r.perSource),
-		Sources: r.sources,
-		Skipped: r.skipped,
+// knownCites removes [n] citations above the last source id, so every
+// citation left points at a page that was read. A bracket right after an
+// identifier (args[7]) is code, not a citation, and is kept.
+func knownCites(answer string, sources int) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range citeRef.FindAllStringSubmatchIndex(answer, -1) {
+		id, _ := strconv.Atoi(answer[m[2]:m[3]])
+		if id <= sources || m[0] > 0 && isIdent(answer[m[0]-1]) {
+			continue
+		}
+		b.WriteString(answer[last:m[0]])
+		last = m[1]
 	}
+	b.WriteString(answer[last:])
+	return b.String()
+}
+
+func isIdent(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }

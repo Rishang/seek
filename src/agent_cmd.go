@@ -20,22 +20,23 @@ func agentCmd() *cli.Command {
 		UsageText: "seek agent [--deep] [--reasoning-effort E] [--sources N] [--max-steps N] [--model M] [--extract-model M] [-o markdown|json] <question>",
 		Description: "Default (shallow): one search, then the model answers from the result\n" +
 			"snippets or first reads a few chosen results, with citations.\n\n" +
-			"--deep: deep research. The model drives seek's search and fetch as tools\n" +
-			"over several turns; each fetched page is distilled into deduped facts by\n" +
-			"extract_model before the model sees it. Then it answers with citations.\n\n" +
+			"--deep: deep research. extract_model splits the question into a checklist,\n" +
+			"seek searches each part and reads the best pages, and extract_model pulls\n" +
+			"facts that must quote the page. Parts still uncovered get another round.\n" +
+			"The model then answers once, without tools, from the merged facts.\n\n" +
 			"Needs an OpenAI Chat Completions–compatible endpoint in provider.yaml:\n\n" +
 			"  agent:\n" +
 			"    base_url: https://api.openai.com/v1\n" +
 			"    api_key: sk-...          # or SEEK_AGENT_API_KEY\n" +
 			"    model: gpt-5             # synthesis\n" +
-			"    extract_model: gpt-5-nano # --deep page extraction (defaults to model)\n" +
+			"    extract_model: gpt-5-nano # query splits, --deep checklist and extraction (defaults to model)\n" +
 			"    reasoning_effort: medium  # optional; sent with model's requests only\n" +
-			"    max_steps: 12             # optional; --deep turn cap",
+			"    max_steps: 2              # optional; --deep read rounds",
 		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: "deep", Usage: "Deep research: let the model search and fetch over multiple turns"},
+			&cli.BoolFlag{Name: "deep", Usage: "Deep research: checklist, multi-source fact extraction, one cited answer"},
 			&cli.StringFlag{Name: "reasoning-effort", Aliases: []string{"e"}, Usage: "Reasoning effort for the main model, e.g. low, medium, high (overrides agent.reasoning_effort)"},
 			&cli.IntFlag{Name: "sources", Value: agent.DefaultSources, Usage: "Search results to answer from without --deep (overrides agent.sources)"},
-			&cli.IntFlag{Name: "max-steps", Value: agent.DefaultMaxSteps, Usage: "Model turns with --deep before a forced answer (overrides agent.max_steps)"},
+			&cli.IntFlag{Name: "max-steps", Value: agent.DefaultMaxRounds, Usage: "Read rounds with --deep: the first read plus gap rounds for uncovered parts (overrides agent.max_steps)"},
 			&cli.StringFlag{Name: "model", Usage: "Synthesis model (overrides agent.model)"},
 			&cli.StringFlag{Name: "extract-model", Usage: "Extraction model (overrides agent.extract_model)"},
 			&cli.StringFlag{Name: "output", Aliases: []string{"o"}, Value: "markdown", Usage: "Output format: markdown, json"},
@@ -142,7 +143,7 @@ func opAgent(ctx context.Context, req agentRequest) (*agent.Result, error) {
 		ExtractModel:    ac.ExtractModel,
 		ReasoningEffort: ac.ReasoningEffort,
 		Sources:         ac.Sources,
-		MaxSteps:        ac.MaxSteps,
+		MaxRounds:       ac.MaxSteps,
 	}
 	run := agent.Run
 	if req.Deep {
