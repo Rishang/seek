@@ -163,6 +163,21 @@ func (p *TavilyProvider) Fetch(ctx context.Context, url string, opts config.Fetc
 	}, nil
 }
 
+// ---- Transcribe ----
+
+// Transcribe extracts the video page as markdown: for YouTube, tavily's extract
+// includes a timestamped "### Transcript" section when captions exist (no ASR
+// fallback), alongside the title, description, and chapters.
+func (p *TavilyProvider) Transcribe(ctx context.Context, url, _ string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
+}
+
+// Parse converts a document URL to markdown. Extract handles PDFs; Office files fail
+// with "Failed to fetch url", so auto fails over.
+func (p *TavilyProvider) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
+}
+
 // ---- Crawl ----
 
 func (p *TavilyProvider) Crawl(ctx context.Context, url string) (*config.CrawlResult, error) {
@@ -193,7 +208,9 @@ func (p *TavilyProvider) Crawl(ctx context.Context, url string) (*config.CrawlRe
 }
 
 var (
-	_ SearchProvider = (*TavilyProvider)(nil)
-	_ FetchProvider  = (*TavilyProvider)(nil)
-	_ CrawlProvider  = (*TavilyProvider)(nil)
+	_ SearchProvider     = (*TavilyProvider)(nil)
+	_ FetchProvider      = (*TavilyProvider)(nil)
+	_ CrawlProvider      = (*TavilyProvider)(nil)
+	_ TranscribeProvider = (*TavilyProvider)(nil)
+	_ ParseProvider      = (*TavilyProvider)(nil)
 )

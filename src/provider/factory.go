@@ -20,7 +20,7 @@ type opCache struct {
 type Factory struct {
 	providers map[string]Provider
 	caches    map[string]opCache  // keyed by "search" | "fetch" | "crawl"
-	chains    map[string][]string // auto candidate order, keyed by "search" | "fetch"
+	chains    map[string][]string // auto candidate order, keyed by "search" | "fetch" | "transcribe" | "parse"
 }
 
 // NewFactory builds providers from the given list of ProviderConfig entries.
@@ -28,7 +28,7 @@ func NewFactory(providers []config.ProviderConfig) *Factory {
 	f := &Factory{
 		providers: make(map[string]Provider, len(providers)),
 		caches:    make(map[string]opCache, 3),
-		chains:    make(map[string][]string, 2),
+		chains:    make(map[string][]string, 4),
 	}
 	for _, pc := range providers {
 		if pc.APIKey == "" && pc.Host == "" {
@@ -131,6 +131,43 @@ func (f *Factory) Crawl(name string) (CrawlProvider, error) {
 		return cachingCrawl{CrawlProvider: cp, store: c.store, provider: name, ttl: c.ttl}, nil
 	}
 	return cp, nil
+}
+
+// Transcribe returns a provider that supports transcribe, or an error. The
+// name "auto" builds a failover chain. ponytail: no cache yet; add one if
+// repeat transcripts of the same video show up in practice.
+func (f *Factory) Transcribe(name string) (TranscribeProvider, error) {
+	if name != "auto" {
+		return capability[TranscribeProvider](f, name, "transcribe")
+	}
+	var chain []autoTranscribeEntry
+	for _, n := range f.chains["transcribe"] {
+		if tp, err := capability[TranscribeProvider](f, n, "transcribe"); err == nil {
+			chain = append(chain, autoTranscribeEntry{name: n, tp: tp})
+		}
+	}
+	if len(chain) == 0 {
+		return nil, fmt.Errorf("provider %q: no configured provider supports transcribe", "auto")
+	}
+	return newAutoTranscribe(chain), nil
+}
+
+// Parse returns a provider that supports parse, or an error. The name "auto"
+// builds a failover chain. Parse results are not cached.
+func (f *Factory) Parse(name string) (ParseProvider, error) {
+	if name != "auto" {
+		return capability[ParseProvider](f, name, "parse")
+	}
+	var chain []autoParseEntry
+	for _, n := range f.chains["parse"] {
+		if pp, err := capability[ParseProvider](f, n, "parse"); err == nil {
+			chain = append(chain, autoParseEntry{name: n, pp: pp})
+		}
+	}
+	if len(chain) == 0 {
+		return nil, fmt.Errorf("provider %q: no configured provider supports parse", "auto")
+	}
+	return &autoParse{chain: chain}, nil
 }
 
 // capability looks up a provider by name and asserts it supports capability T,

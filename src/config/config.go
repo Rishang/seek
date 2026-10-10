@@ -182,6 +182,9 @@ type Config struct {
 	Fetch  Operation `yaml:"fetch"`
 	Crawl  Operation `yaml:"crawl"`
 
+	Transcribe Operation `yaml:"transcribe"`
+	Parse      Operation `yaml:"parse"`
+
 	// Priority is the global "auto" try-order (index 0 = highest priority),
 	// filtered to capable+configured providers at runtime. It lives under the
 	// top-level "providers.priority" key, not under "config", hence yaml:"-".
@@ -191,7 +194,7 @@ type Config struct {
 // DefaultPriority is the built-in "auto" try-order, used when config.yaml does
 // not set providers.priority. Index 0 is highest priority.
 var DefaultPriority = []string{
-	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "brave", "perplexity",
+	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "supadata", "brave", "perplexity",
 }
 
 // Operation configures a single capability (search, fetch, or crawl).
@@ -285,6 +288,9 @@ func Default() Config {
 		Search: Operation{Provider: "auto"},
 		Fetch:  Operation{Provider: "auto", Cache: enabledCache(), Options: FetchOptions{OutputFormat: FormatMarkdown}},
 		Crawl:  Operation{Provider: "firecrawl", Cache: enabledCache()},
+
+		Transcribe: Operation{Provider: "auto"},
+		Parse:      Operation{Provider: "auto"},
 
 		Priority: append([]string(nil), DefaultPriority...),
 	}

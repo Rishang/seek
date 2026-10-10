@@ -8,14 +8,15 @@ import "testing"
 // the registry as the single source of truth.
 func TestRegistryCapabilitiesMatchInterfaces(t *testing.T) {
 	want := map[string]Capability{
-		"firecrawl":     CapSearch | CapFetch | CapCrawl,
-		"tavily":        CapSearch | CapFetch | CapCrawl,
+		"firecrawl":     CapSearch | CapFetch | CapCrawl | CapTranscribe | CapParse,
+		"tavily":        CapSearch | CapFetch | CapCrawl | CapTranscribe | CapParse,
 		"spider.cloud":  CapSearch | CapFetch | CapCrawl,
 		"webcrawlerapi": CapFetch | CapCrawl,
 		"lightpanda":    CapFetch,
 		"brave":         CapSearch,
 		"exa":           CapSearch | CapFetch,
 		"perplexity":    CapSearch,
+		"supadata":      CapFetch | CapCrawl | CapTranscribe | CapParse,
 	}
 
 	got := Providers()

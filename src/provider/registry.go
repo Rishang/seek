@@ -17,6 +17,8 @@ const (
 	CapSearch Capability = 1 << iota
 	CapFetch
 	CapCrawl
+	CapTranscribe
+	CapParse
 )
 
 // Has reports whether the mask includes cap.
@@ -51,6 +53,7 @@ var registry = []registration{
 	{"brave", "BRAVE_API_KEY", "", func(c config.ProviderConfig) Provider { return NewBraveProvider(c) }},
 	{"exa", "EXA_API_KEY", "", func(c config.ProviderConfig) Provider { return NewExaProvider(c) }},
 	{"perplexity", "PERPLEXITY_API_KEY", "", func(c config.ProviderConfig) Provider { return NewPerplexityProvider(c) }},
+	{"supadata", "SUPADATA_API_KEY", "", func(c config.ProviderConfig) Provider { return NewSupadataProvider(c) }},
 }
 
 // byName indexes the registry for construction lookups.
@@ -78,6 +81,12 @@ var infos = func() []Info {
 		}
 		if _, ok := p.(CrawlProvider); ok {
 			caps |= CapCrawl
+		}
+		if _, ok := p.(TranscribeProvider); ok {
+			caps |= CapTranscribe
+		}
+		if _, ok := p.(ParseProvider); ok {
+			caps |= CapParse
 		}
 		out[i] = Info{Name: r.name, Env: r.env, HostDefault: r.hostDefault, Caps: caps}
 	}

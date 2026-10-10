@@ -1,6 +1,6 @@
 # `seek serve` — HTTP API
 
-`seek serve` exposes the same search/fetch/crawl/agent operations as the CLI over a
+`seek serve` exposes the same search/fetch/crawl/parse/transcribe/agent operations as the CLI over a
 small JSON HTTP API, backed by the shared provider factory and `auto` failover.
 
 ## Endpoints
@@ -10,6 +10,8 @@ small JSON HTTP API, backed by the shared provider factory and `auto` failover.
 | POST   | `/search`       | yes  | `{"query","provider?","range?","start?","end?"}` → `{"results":[...]}` |
 | POST   | `/fetch`       | yes  | `{"url","provider?","format?"}` → `FetchResult` |
 | POST   | `/crawl`        | yes  | `{"url","provider?"}` → `CrawlResult` |
+| POST   | `/parse`        | yes  | `{"url","provider?"}` → `FetchResult` (`content` = document markdown) |
+| POST   | `/transcribe`   | yes  | `{"url","provider?","lang?"}` → `FetchResult` (`content` = transcript) |
 | POST   | `/agent`        | yes  | `{"question","deep?","reasoning_effort?","sources?","max_steps?","model?","extract_model?"}` → `{"answer","sources","markdown",...}`; needs the `agent:` block in provider.yaml |
 | GET    | `/healthz`      | no   | liveness, returns `ok` |
 
@@ -19,9 +21,9 @@ shared `buildTimeRange` (same semantics as the `search` CLI flags).
 ## Concurrency
 
 `net/http` serves every request in its own goroutine. In-flight operation
-requests (search/fetch/crawl/agent) are capped at **50** by default
+requests (search/fetch/crawl/parse/transcribe/agent) are capped at **50** by default
 (`SEEK_SERVE_MAX_CONCURRENT` or `--max-concurrent`); excess requests get **503**. `GET /healthz` is exempt
-so liveness probes stay reliable. The operation runners (`opSearch`/`opFetch`/`opCrawl` in `ops.go`, `opAgent` in `agent_cmd.go`)
+so liveness probes stay reliable. The operation runners (`opSearch`/`opFetch`/`opCrawl`/`opParse`/`opTranscribe` in `ops.go`, `opAgent` in `agent_cmd.go`)
 only *read* the factory, which is built once in `main()` and never mutated
 afterward, so concurrent requests are safe. Each `auto` call builds its own
 failover chain instance, so per-request attempt state never collides.

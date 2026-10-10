@@ -170,6 +170,21 @@ func (p *FirecrawlProvider) Fetch(ctx context.Context, url string, opts config.F
 	}, nil
 }
 
+// ---- Transcribe ----
+
+// Transcribe scrapes the video page as markdown: for YouTube, firecrawl's
+// scrape includes the caption track when one exists (no ASR fallback), along
+// with the page title and description.
+func (p *FirecrawlProvider) Transcribe(ctx context.Context, url, _ string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
+}
+
+// Parse converts a document URL to markdown. Scrape auto-detects the file type: PDF,
+// docx/doc/odt/rtf, and xlsx/xls (each sheet becomes a table).
+func (p *FirecrawlProvider) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
+	return p.Fetch(ctx, url, config.FetchOptions{OutputFormat: config.FormatMarkdown})
+}
+
 // ---- Crawl ----
 
 func (p *FirecrawlProvider) Crawl(ctx context.Context, url string) (*config.CrawlResult, error) {
@@ -226,7 +241,9 @@ func (p *FirecrawlProvider) Crawl(ctx context.Context, url string) (*config.Craw
 
 // Compile-time interface checks.
 var (
-	_ SearchProvider = (*FirecrawlProvider)(nil)
-	_ FetchProvider  = (*FirecrawlProvider)(nil)
-	_ CrawlProvider  = (*FirecrawlProvider)(nil)
+	_ SearchProvider     = (*FirecrawlProvider)(nil)
+	_ FetchProvider      = (*FirecrawlProvider)(nil)
+	_ CrawlProvider      = (*FirecrawlProvider)(nil)
+	_ TranscribeProvider = (*FirecrawlProvider)(nil)
+	_ ParseProvider      = (*FirecrawlProvider)(nil)
 )

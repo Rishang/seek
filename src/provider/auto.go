@@ -99,6 +99,74 @@ func (a *autoFetch) Fetch(ctx context.Context, url string, opts config.FetchOpti
 	return nil, chainError("fetch", a.attempts)
 }
 
+// ---- transcribe ----
+
+type autoTranscribeEntry struct {
+	name string
+	tp   TranscribeProvider
+}
+
+type autoTranscribe struct {
+	chain    []autoTranscribeEntry
+	attempts []Attempt // ponytail: mutated per call; single-shot per process, not safe for concurrent reuse
+}
+
+func newAutoTranscribe(chain []autoTranscribeEntry) *autoTranscribe {
+	return &autoTranscribe{chain: chain}
+}
+
+func (a *autoTranscribe) Attempts() []Attempt { return a.attempts }
+
+func (a *autoTranscribe) Transcribe(ctx context.Context, url, lang string) (*config.FetchResult, error) {
+	a.attempts = a.attempts[:0]
+	for _, e := range a.chain {
+		res, err := e.tp.Transcribe(ctx, url, lang)
+		if err != nil {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: err})
+			continue
+		}
+		if res == nil || res.Content == "" {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: errEmptyContent})
+			continue
+		}
+		a.attempts = append(a.attempts, Attempt{Provider: e.name})
+		return res, nil
+	}
+	return nil, chainError("transcribe", a.attempts)
+}
+
+// ---- parse ----
+
+type autoParseEntry struct {
+	name string
+	pp   ParseProvider
+}
+
+type autoParse struct {
+	chain    []autoParseEntry
+	attempts []Attempt // ponytail: mutated per call; single-shot per process, not safe for concurrent reuse
+}
+
+func (a *autoParse) Attempts() []Attempt { return a.attempts }
+
+func (a *autoParse) Parse(ctx context.Context, url string) (*config.FetchResult, error) {
+	a.attempts = a.attempts[:0]
+	for _, e := range a.chain {
+		res, err := e.pp.Parse(ctx, url)
+		if err != nil {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: err})
+			continue
+		}
+		if res == nil || res.Content == "" {
+			a.attempts = append(a.attempts, Attempt{Provider: e.name, Err: errEmptyContent})
+			continue
+		}
+		a.attempts = append(a.attempts, Attempt{Provider: e.name})
+		return res, nil
+	}
+	return nil, chainError("parse", a.attempts)
+}
+
 // chainError aggregates the failed attempts into a single descriptive error.
 func chainError(op string, attempts []Attempt) error {
 	parts := make([]string, 0, len(attempts))
@@ -120,4 +188,10 @@ var (
 	_ TimeRangeSearcher = (*autoSearch)(nil)
 	_ FetchProvider     = (*autoFetch)(nil)
 	_ AutoReporter      = (*autoFetch)(nil)
+
+	_ TranscribeProvider = (*autoTranscribe)(nil)
+	_ AutoReporter       = (*autoTranscribe)(nil)
+
+	_ ParseProvider = (*autoParse)(nil)
+	_ AutoReporter  = (*autoParse)(nil)
 )

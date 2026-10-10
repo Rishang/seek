@@ -6,9 +6,9 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 ## Contents
 
 - [Capability matrix](#capability-matrix)
-- [The `auto` provider](#the-auto-provider-search--fetch)
+- [The `auto` provider](#the-auto-provider-search-fetch-parse--transcribe)
 - [Providers](#providers)
-  - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity)
+  - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity) · [supadata](#9-supadata)
 - [Auth](#auth)
 - [Time range](#time-range)
 - [Published date](#published-date)
@@ -17,26 +17,30 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 
 ## Capability matrix
 
-| Provider        | Search | Fetch | Crawl | Time range | Published date | File              |
-|-----------------|:------:|:------:|:-----:|:----------:|:--------------:|-------------------|
-| firecrawl       |   ✓    |   ✓    |   ✓   |     ✓      |       —        | `firecrawl.go`    |
-| tavily          |   ✓    |   ✓    |   ✓   |     ✓      |   news only    | `tavily.go`       |
-| spider.cloud    |   ✓    |   ✓    |   ✓   |     ✓      |       —        | `spider.go`       |
-| webcrawlerapi   |   —    |   ✓    |   ✓   |     —      |       —        | `webcrawlerapi.go`|
-| lightpanda      |   —    |   ✓    |   —   |     —      |       —        | `lightpanda.go`   |
-| brave           |   ✓    |   —    |   —   |     ✓      |   `page_age`   | `brave.go`        |
-| exa             |   ✓    |   ✓    |   —   |     ✓      | `publishedDate`|  `exa.go`         |
-| perplexity      |   ✓    |   —    |   —   |     ✓      |     `date`     | `perplexity.go`   |
+| Provider        | Search | Fetch | Crawl |   Parse    | Transcribe | Time range | Published date | File              |
+|-----------------|:------:|:-----:|:-----:|:----------:|:----------:|:----------:|:--------------:|-------------------|
+| firecrawl       |   ✓    |   ✓   |   ✓   | PDF+Office |  ✓ (page)  |     ✓      |       —        | `firecrawl.go`    |
+| tavily          |   ✓    |   ✓   |   ✓   |    PDF     |  ✓ (page)  |     ✓      |   news only    | `tavily.go`       |
+| spider.cloud    |   ✓    |   ✓   |   ✓   |     —      |     —      |     ✓      |       —        | `spider.go`       |
+| webcrawlerapi   |   —    |   ✓   |   ✓   |     —      |     —      |     —      |       —        | `webcrawlerapi.go`|
+| lightpanda      |   —    |   ✓   |   —   |     —      |     —      |     —      |       —        | `lightpanda.go`   |
+| brave           |   ✓    |   —   |   —   |     —      |     —      |     ✓      |   `page_age`   | `brave.go`        |
+| exa             |   ✓    |   ✓   |   —   |     —      |     —      |     ✓      | `publishedDate`| `exa.go`          |
+| perplexity      |   ✓    |   —   |   —   |     —      |     —      |     ✓      |     `date`     | `perplexity.go`   |
+| supadata        |   —    |   ✓   |   ✓   |    PDF     |     ✓      |     —      |       —        | `supadata.go`     |
 
-Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` the type implements
+Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `ParseProvider` / `TranscribeProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
 
-## The `auto` provider (search & fetch)
+## The `auto` provider (search, fetch, parse & transcribe)
 
 `auto` is a meta-provider (`provider/auto.go`) that tries configured providers in
 priority order and returns the first non-empty result, failing over on either an
-error or an empty result. It is the default for `search` and `fetch`. Crawl does
-not support it.
+error or an empty result. It is the default for `search`, `fetch`, `parse` and `transcribe`. Crawl does
+not support it. `supadata` sits after the page scrapers in `DefaultPriority`, so in
+the transcribe chain tavily/firecrawl answer first and a video with no captions still
+"succeeds" with just the page — use `-p supadata` (or move it up in `priority:`) to
+get its ASR fallback.
 
 - **Membership** comes from provider.yaml (plus env overrides): every provider you
   have a key/host for, that supports the operation, is in the chain. There is no
@@ -156,6 +160,40 @@ Example config.yaml priority hint:
 - Search-only: Perplexity has no page-scraping endpoint. Extracting a page through the
   chat/completions model returned a paraphrased summary rather than the real page content,
   so fetch was dropped — leave fetch to providers that actually scrape.
+
+### 9. supadata
+
+**Docs:** https://docs.supadata.ai (transcript, web/scrape, web/crawl)
+
+**Capabilities:** Fetch, Crawl, Transcribe
+
+- **Fetch:** `GET /v1/web/scrape?url=` → `{url, content (markdown), name, urls[]}`. Markdown
+  only; `--format` is ignored.
+- **Crawl:** `POST /v1/web/crawl {url, limit: 100}` → `{jobId}`; poll
+  `GET /v1/web/crawl/{jobId}` until `status: completed` (`failed|cancelled` → error), then
+  follow the absolute `next` URL (`?skip=N`) until absent. Pages are recorded by URL.
+- **Transcribe:** `GET /v1/transcript?url=&text=true[&lang=]`. Any video page URL
+  (YouTube, TikTok, Instagram, X, Facebook) or direct media file; native captions first, AI
+  fallback. Long videos return `202 {jobId}` → poll `GET /v1/transcript/{jobId}` until
+  `status: completed|failed`.
+
+All endpoints authenticate with an `x-api-key` header (not bearer).
+
+## Parse (documents)
+
+`Parse` is each provider's page scrape pointed at a document URL. Tested 2026-10-09:
+
+- **firecrawl** — `/v2/scrape` auto-detects PDF (fast text, OCR fallback), docx/doc/odt/rtf, xlsx/xls
+  (per docs; not live-tested, no key).
+- **tavily** — `/extract` parses PDFs to plain text; docx/xlsx fail with `Failed to fetch url`.
+- **supadata** — `/web/scrape` parses PDFs to markdown with tables; docx/xlsx come back as raw zip
+  bytes, which `Fetch` rejects via `looksBinary` so `auto` fails over.
+- **lightpanda** — returns empty content for a PDF; not a parse provider.
+- exa / spider.cloud — undocumented for files; not wired.
+
+Firecrawl's and tavily's `Transcribe` are just a markdown scrape/extract: YouTube pages include
+the caption track when one exists (tavily as a timestamped `### Transcript` section), with no ASR
+fallback, so prefer supadata.
 
 ## Auth
 
