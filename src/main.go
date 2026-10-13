@@ -154,7 +154,7 @@ func main() {
 		Name:        "seek",
 		Version:     version,
 		Usage:       "The OpenRouter for web search",
-		Description: "Run web search, fetch, crawl, map, parse, and transcribe across pluggable providers.\n\nDocs: " + readmeURL,
+		Description: "Run web search, fetch, crawl, map, parse, and transcribe across pluggable providers.\n\nDocs: " + readmeURL + "\nDocs (raw Markdown, for agents): " + readmeRawURL,
 		Flags:       []cli.Flag{verboseFlag},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			if cmd.Bool("verbose") {

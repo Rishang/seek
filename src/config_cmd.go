@@ -19,6 +19,9 @@ import (
 // readmeURL is surfaced in help output so users can find the full docs.
 const readmeURL = "https://github.com/rishang/seek#readme"
 
+// readmeRawURL is the plain-Markdown README, easy for agents to fetch.
+const readmeRawURL = "https://raw.githubusercontent.com/Rishang/seek/refs/heads/main/README.md"
+
 // Providers grouped by the capability they support, derived from the provider
 // registry (the single source of truth). Reused by the config view, the init
 // form, and the init flag validation.
