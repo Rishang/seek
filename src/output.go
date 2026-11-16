@@ -31,7 +31,6 @@ func render(cmd *cli.Command, v any) error {
 func renderTo(w io.Writer, format string, v any) error {
 	if format != "csv" {
 		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
 		return enc.Encode(v)
 	}
 

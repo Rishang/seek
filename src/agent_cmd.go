@@ -67,7 +67,6 @@ func agentCmd() *cli.Command {
 
 			if cmd.String("output") == "json" {
 				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
 				return enc.Encode(res)
 			}
 			fmt.Print(res.Markdown())

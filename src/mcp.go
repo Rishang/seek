@@ -440,7 +440,7 @@ func rpcErr(id json.RawMessage, code int, msg string) *rpcResponse {
 }
 
 func jsonString(v any) string {
-	b, err := json.MarshalIndent(v, "", "  ")
+	b, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Sprintf("%v", v)
 	}

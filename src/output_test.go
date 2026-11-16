@@ -35,7 +35,7 @@ func TestRenderDefaultsToJSON(t *testing.T) {
 	if err := renderTo(&buf, "", &config.FetchResult{URL: "u", Content: "c", Format: "markdown"}); err != nil {
 		t.Fatalf("renderTo: %v", err)
 	}
-	if !strings.Contains(buf.String(), `"content": "c"`) {
+	if !strings.Contains(buf.String(), `"content":"c"`) {
 		t.Fatalf("expected JSON output, got %q", buf.String())
 	}
 }
