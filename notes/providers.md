@@ -8,7 +8,7 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 - [Capability matrix](#capability-matrix)
 - [The `auto` provider](#the-auto-provider-search-fetch-map-parse--transcribe)
 - [Providers](#providers)
-  - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity) · [supadata](#9-supadata)
+  - [firecrawl](#1-firecrawl) · [tavily](#2-tavily) · [spider.cloud](#3-spidercloud) · [webcrawlerapi](#4-webcrawlerapi) · [lightpanda](#5-lightpanda) · [brave](#6-brave) · [exa](#7-exa) · [perplexity](#8-perplexity) · [supadata](#9-supadata) · [jina](#10-jina) · [linkup](#11-linkup) · [serper](#12-serper)
 - [Auth](#auth)
 - [Time range](#time-range)
 - [Published date](#published-date)
@@ -28,6 +28,9 @@ shapes see [`.idea/providers.md`](../.idea/providers.md); this file is the seek-
 | exa             |   ✓    |   ✓   |   —   |  —  |     —      |     —      |     ✓      | `publishedDate`| `exa.go`          |
 | perplexity      |   ✓    |   —   |   —   |  —  |     —      |     —      |     ✓      |     `date`     | `perplexity.go`   |
 | supadata        |   —    |   ✓   |   ✓   |  ✓  |    PDF     |     ✓      |     —      |       —        | `supadata.go`     |
+| jina            |   ✓    |   ✓   |   —   |  —  |     —      |     —      |     —      | `publishedTime`| `jina.go`         |
+| linkup          |   ✓    |   ✓   |   —   |  —  |     —      |     —      |     ✓      |  `publishedAt` | `linkup.go`       |
+| serper          |   ✓    |   ✓   |   —   |  —  |     —      |     —      |     ✓      |     `date`     | `serper.go`       |
 
 Capability = which of `SearchProvider` / `FetchProvider` / `CrawlProvider` / `MapProvider` / `ParseProvider` / `TranscribeProvider` the type implements
 (`provider/provider.go`). Time range = also implements `TimeRangeSearcher` (`SupportsTimeRange()`).
@@ -47,6 +50,8 @@ of result. Image results set `SearchResult.ImageURL` (the image) with `URL` = so
 |  —  | firecrawl | `sources: ["news"]` → `data.news[]` (`snippet`, `date`) | `sources: ["images"]` → `data.images[]` (`imageUrl`, `url`) |
 | tavily    | `topic: "news"`                         | `include_images` + `include_image_descriptions` → top-level `images[]` (no source page: `URL` = image; description → title) |
 |  ✓  | exa       | `category: "news"`                      | —                                                             |
+| jina      | `GET /search?type=news`                 | — (`type=images` results aren't page-shaped)                  |
+| serper    | `POST /news` → `news[]`                 | `POST /images` → `images[]` (`imageUrl`, `link` = source page) |
 
 ## The `auto` provider (search, fetch, map, parse & transcribe)
 
@@ -198,6 +203,57 @@ Example config.yaml priority hint:
 
 All endpoints authenticate with an `x-api-key` header (not bearer).
 
+---
+
+### 10. jina
+
+**Docs:** https://jina.ai/reader (OpenAPI: https://r.jina.ai/openapi.json, https://s.jina.ai/openapi.json)
+**Auth:** `Authorization: Bearer <key>`, sent only when a key is set
+**Capabilities:** Search (`s.jina.ai`), Fetch (`r.jina.ai`); Fetch only when keyless
+
+**Notes:**
+- **Fetch:** `POST https://r.jina.ai/ {url}` with `Accept: application/json` → `data.content` (markdown).
+  `--format html` adds `X-Respond-With: html` → `data.html`. POST keeps the target URL's own
+  query string out of Reader's query params.
+- **Search:** `GET https://s.jina.ai/search?q=&num=10[&type=news]` with `X-Respond-With: no-content`
+  (otherwise Jina reads every result page first) → `data[] {title, url, description, publishedTime}`.
+  Requires a key (keyless returns 401).
+- **Keyless:** Reader works without a key at a per-IP rate limit. The factory skips providers with no
+  key and no host, so a keyless setup stores only `host` (registry host default `https://r.jina.ai`);
+  `NewJinaProvider` then returns the fetch-only `JinaReaderProvider`, keeping jina out of the search
+  chain. `host` also points fetch at a self-hosted Reader.
+
+---
+
+### 11. linkup
+
+**Docs:** https://docs.linkup.so
+**Auth:** `Authorization: Bearer <key>`
+**Capabilities:** Search, Fetch
+
+**Notes:**
+- **Search:** `POST /v1/search {q, depth: "standard", outputType: "searchResults", maxResults: 10}` →
+  `results[] {type, name, url, content, publishedAt}`; `type: "image"` entries are dropped.
+- `fromDate` / `toDate` time filter (`YYYY-MM-DD`, `ymd`).
+- **Fetch:** `POST /v1/fetch {url}` → `{markdown}`. Markdown only; `--format` is ignored.
+
+---
+
+### 12. serper
+
+**Docs:** https://serper.dev
+**Auth:** `X-API-KEY: <key>` (not Bearer)
+**Capabilities:** Search (web/news/images), Fetch
+
+**Notes:**
+- **Search:** `POST https://google.serper.dev/{search|news|images} {q, num: 10, tbs?}` →
+  `organic[]` / `news[]` / `images[]` (`title`, `link`, `snippet`, `date`, `imageUrl`).
+- `tbs` Google-style time filter (`googleTBS` custom range `cdr:1,cd_min:…`, not `qdr:`), so any
+  `--start`/`--end` window works, not just last day/week/month/year.
+- `date` is Google's display string (`"Jan 2, 2026"`, `"2 days ago"`), not ISO 8601.
+- **Fetch:** `POST https://scrape.serper.dev {url, includeMarkdown: true}` → `{text, markdown}`;
+  falls back to `text` when `markdown` is absent. `--format` is ignored.
+
 ## Parse (documents)
 
 `Parse` is each provider's page scrape pointed at a document URL. Tested 2026-10-09:
@@ -220,6 +276,8 @@ Shared `httpClient` (`client.go`) sends `Authorization: Bearer <key>`. Exception
 
 - **brave** — `X-Subscription-Token: <key>` header, query as GET param; bypasses the shared
   post/get helpers and builds the request directly.
+- **serper** — `X-API-KEY: <key>` header; builds the request directly.
+- **jina** — Bearer, but builds the request directly so it can omit the header when keyless.
 - **exa** — accepts Bearer, so it uses the shared helper as-is.
 
 ## Time range
@@ -235,6 +293,8 @@ each provider formats to its own param via helpers in `timerange.go`:
 |  ✓  | brave        | `freshness`                    | `YYYY-MM-DDtoYYYY-MM-DD` (`braveFreshness`)           |
 | exa          | `startPublishedDate` / `endPublishedDate` | ISO 8601 (`iso8601`)                      |
 |  —  | perplexity   | `search_after_date_filter` / `search_before_date_filter` | `M/D/YYYY` (`mdy`)         |
+| linkup       | `fromDate` / `toDate`          | `YYYY-MM-DD` (`ymd`)                                  |
+| serper       | `tbs`                          | same Google `tbs` (`googleTBS`)                       |
 
 Open bounds drop out (`omitempty` / empty string). If a selected provider lacks
 `TimeRangeSearcher`, `main.go` emits `logx.Warn` and runs the search without the filter.
@@ -246,6 +306,9 @@ Maps to `SearchResult.PublishedDate` (JSON `published_date`, `omitempty`):
 - **brave** — `page_age` (ISO 8601, when known).
 - **exa** — `publishedDate` (ISO 8601, when known).
 - **perplexity** — `date` (per search result, when known).
+- **jina** — `publishedTime` (when known).
+- **linkup** — `publishedAt` (`YYYY-MM-DD`, when known).
+- **serper** — `date` (Google's display string, e.g. `2 days ago`).
 - **tavily** — `published_date`, only for `topic=news`; empty for general search.
 - **firecrawl / spider** — none; field omitted.
 

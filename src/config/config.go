@@ -196,6 +196,7 @@ type Config struct {
 // not set providers.priority. Index 0 is highest priority.
 var DefaultPriority = []string{
 	"tavily", "exa", "firecrawl", "spider.cloud", "webcrawlerapi", "lightpanda", "supadata", "brave", "perplexity",
+	"jina", "linkup", "serper",
 }
 
 // Operation configures a single capability (search, fetch, or crawl).

@@ -470,7 +470,7 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 
 ## 🌐 Providers
 
-9 providers, one interface. Configure one or all — `auto` uses whatever has a key.
+12 providers, one interface. Configure one or all — `auto` uses whatever has a key.
 
 | Provider | search | fetch | crawl | map | parse | transcribe | Key env var |
 |---|---|---|---|---|---|---|---|
@@ -483,17 +483,22 @@ Liveness at `GET /healthz` · all routes in [notes/serve.md](notes/serve.md)
 | webcrawlerapi | — | ✓ | ✓ | — | — | — | `WEBCRAWLERAPI_API_KEY` |
 | lightpanda | — | ✓ | — | — | — | — | `LIGHTPANDA_API_KEY` |
 | supadata | — | ✓ | ✓ | ✓ | ✓ (PDF) | ✓ (captions + AI) | `SUPADATA_API_KEY` |
+| jina | ✓ | ✓ | — | — | — | — | `JINA_API_KEY` |
+| linkup | ✓ | ✓ | — | — | — | — | `LINKUP_API_KEY` |
+| serper | ✓ | ✓ | — | — | — | — | `SERPER_API_KEY` |
 
-`firecrawl` and `lightpanda` are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
+`firecrawl`, `lightpanda` and `jina` (Reader) are **self-hostable** — set a custom host via `seek config init --host name=url` to point at your own instance. An env var always overrides a stored key.
 
-**Auto priority order:** one global list — `tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata → brave → perplexity`. For each operation, `auto` keeps only the providers that support it (and have a key), so the effective defaults are:
+`jina` also works without a key: give it only a host (`seek config init --host jina=https://r.jina.ai`, or leave the key blank in the interactive init) and it serves keyless `fetch` at Jina's per-IP rate limit. Search needs a key.
+
+**Auto priority order:** one global list — `tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata → brave → perplexity → jina → linkup → serper`. For each operation, `auto` keeps only the providers that support it (and have a key), so the effective defaults are:
 
 | Operation | Default `auto` order |
 |---|---|
-| search | tavily → exa → firecrawl → spider.cloud → brave → perplexity |
-| search `--news` | tavily → exa → firecrawl → brave |
-| search `--images` | tavily → firecrawl → brave |
-| fetch | tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata |
+| search | tavily → exa → firecrawl → spider.cloud → brave → perplexity → jina → linkup → serper |
+| search `--news` | tavily → exa → firecrawl → brave → jina → serper |
+| search `--images` | tavily → firecrawl → brave → serper |
+| fetch | tavily → exa → firecrawl → spider.cloud → webcrawlerapi → lightpanda → supadata → jina → linkup → serper |
 | map | tavily → firecrawl → supadata |
 | parse | tavily → firecrawl → supadata |
 | transcribe | tavily → firecrawl → supadata |

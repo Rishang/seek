@@ -17,6 +17,9 @@ func TestRegistryCapabilitiesMatchInterfaces(t *testing.T) {
 		"exa":           CapSearch | CapFetch,
 		"perplexity":    CapSearch,
 		"supadata":      CapFetch | CapCrawl | CapTranscribe | CapParse | CapMap,
+		"jina":          CapSearch | CapFetch,
+		"linkup":        CapSearch | CapFetch,
+		"serper":        CapSearch | CapFetch,
 	}
 
 	got := Providers()

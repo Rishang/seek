@@ -55,6 +55,9 @@ var registry = []registration{
 	{"exa", "EXA_API_KEY", "", func(c config.ProviderConfig) Provider { return NewExaProvider(c) }},
 	{"perplexity", "PERPLEXITY_API_KEY", "", func(c config.ProviderConfig) Provider { return NewPerplexityProvider(c) }},
 	{"supadata", "SUPADATA_API_KEY", "", func(c config.ProviderConfig) Provider { return NewSupadataProvider(c) }},
+	{"jina", "JINA_API_KEY", "https://r.jina.ai", NewJinaProvider},
+	{"linkup", "LINKUP_API_KEY", "", func(c config.ProviderConfig) Provider { return NewLinkupProvider(c) }},
+	{"serper", "SERPER_API_KEY", "", func(c config.ProviderConfig) Provider { return NewSerperProvider(c) }},
 }
 
 // byName indexes the registry for construction lookups.
